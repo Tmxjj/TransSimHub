@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2023-08-23 15:34:52
 @Description: 整合 "Veh"（车辆）、"Air"（航空）和 "Traf"（信号灯）的环境
-LastEditTime: 2025-07-09 16:31:06
+LastEditTime: 2026-01-12 22:16:10
 '''
 import os
 import sys
@@ -135,7 +135,7 @@ class TshubEnvironment(BaseSumoEnvironment):
         self.scene_objects = {
             'vehicle': vehicle_builder,
             'aircraft': aircraft_builder,
-            'tls': tls_builder,
+            'tls': tls_builder, # Traffic Light Signal
             'person': person_builder,
         }
 
@@ -181,7 +181,7 @@ class TshubEnvironment(BaseSumoEnvironment):
         if self.is_map_builder_initialized:
             env_state.update(self.map_infos) # 地图信息是固定的, 只需要每次额外补充进去即可, 不需要每次计算
         return env_state
-
+    # TODO：完善 reward 计算方式
     def __computer_reward(self) -> Literal[0]:
         """自定义 reward 的计算
         """
@@ -193,7 +193,7 @@ class TshubEnvironment(BaseSumoEnvironment):
         return {
             'step_time': self.sim_step, # 返回当前仿真的时间
         }
-    
+    # NOTE:默认为rgb，可以尝试sumo_gui
     def render(self, mode:str='rgb',
                focus_id:str=None, focus_type:str=None, focus_distance:float=None, 
                save_folder:str=None
