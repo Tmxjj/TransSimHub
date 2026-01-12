@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2024-07-13 20:53:01
 @Description: 场景的同步, 根据 SUMO 的信息更新 panda3d
-LastEditTime: 2025-07-28 21:13:10
+LastEditTime: 2026-01-07 22:14:29
 '''
 import math
 from loguru import logger
@@ -42,7 +42,7 @@ class SceneSync(object):
             root_np: 场景的 Node
             showbase_instance: Pnada3D ShowBase
             sensor_config (Dict[str, List[str]]): 需要渲染的物体和对应的摄像头
-            preset (str, optional): 预设分辨率名称（如 '720x480', '360x240' 等）. Defaults to '480p'.
+            preset (str, optional): 预设分辨率名称（如 '720x480', '360x240' , '512x512'等）. Defaults to '480p'.
             resolution (float, optional): 缩放因子（默认 1.0 表示原尺寸, 0.5 表示半尺寸）. Defaults to 1.0.
         """
         self.root_np = root_np
@@ -55,7 +55,9 @@ class SceneSync(object):
             '320P': (320, 240),   # 320x240（类 NTSC 标清）
             '480P': (720, 480),   # 720x480（标准 480P）
             '720P': (1280, 720),  # 1280x720（HD 标清）
-            '1080P': (1920, 1080) # 1920x1080（Full HD）
+            '1080P': (1920, 1080), # 1920x1080（Full HD）
+            'SQUARE_512': (512, 512), # 自定义 1:1 长宽比
+            'SQUARE_1024': (1024, 1024)
         }
         if preset not in presets:
             raise ValueError(f"Invalid preset: {preset}. Valid presets are: {list(presets.keys())}")
@@ -219,8 +221,14 @@ class SceneSync(object):
                 root_np=self.root_np, 
                 showbase_instance=self.showbase_instance
             )
-            if aircraft_id in self.sensor_config.get('aircraft', {}):
-                sensor_types = self.sensor_config['aircraft'][aircraft_id].get('sensor_types', []) # 飞行器需要安装的传感器
+            # 优先使用针对该 aircraft_id 的配置，若不存在则回退到 default 通用配置
+            aircraft_cfg = self.sensor_config.get('aircraft', {})
+            sensor_types = []
+            if aircraft_id in aircraft_cfg:
+                sensor_types = aircraft_cfg[aircraft_id].get('sensor_types', [])
+            elif 'default' in aircraft_cfg:
+                sensor_types = aircraft_cfg['default'].get('sensor_types', [])
+            if sensor_types:
                 element.attach_sensors_to_element(sensor_types)
             self._aircraft_elements[aircraft_id] = element
         else:

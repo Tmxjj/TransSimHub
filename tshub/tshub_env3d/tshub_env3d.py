@@ -2,10 +2,10 @@
 @Author: WANG Maonan
 @Date: 2024-07-07 23:30:33
 @Description: TSHub 环境的 3D 版本, 整体的逻辑为:
-- TshubEnvironment 与 SUMO 进行交互, 获得 SUMO 的数据 (这部分利用 TshubEnvironment)
-- TSHubRenderer 对 SUMO 的环境进行渲染 (这部分利用 TSHubRenderer)
+- TshubEnvironment （逻辑层）与 SUMO 进行交互, 获得 SUMO 的数据 (这部分利用 TshubEnvironment)，处理车辆运动、红绿灯逻辑、碰撞检测等。
+- TSHubRenderer （视觉层）对 SUMO 的环境进行渲染 (这部分利用 TSHubRenderer)
 - TShubSensor 获得渲染的场景的数据, 作为新的 state 进行输出
-LastEditTime: 2025-07-28 21:16:41
+LastEditTime: 2026-01-07 22:36:35
 '''
 from loguru import logger
 from typing import Any, Dict, List
@@ -13,6 +13,7 @@ from typing import Any, Dict, List
 from .base_env3d import BaseSumoEnvironment3D
 
 from ..tshub_env.tshub_env import TshubEnvironment # tshub 与 sumo 交互
+from .vis3d_utils.core_math import calculate_center_point
 from .vis3d_renderer.tshub_render import TSHubRenderer # tshub3D render
 
 class Tshub3DEnvironment(BaseSumoEnvironment3D):
@@ -76,6 +77,15 @@ class Tshub3DEnvironment(BaseSumoEnvironment3D):
             remote_port, num_clients
         )
 
+        # 记录虚拟 aircraft 高度配置（如未配置则默认 80m）
+        self.aircraft_bev_height = 80.0
+        try:
+            self.aircraft_bev_height = sensor_config.get('aircraft', {}) \
+                .get('junction_cam_1', {}) \
+                .get('height', 80.0)
+        except Exception:
+            pass
+
         # 初始化渲染器, 将场景渲染为 3D
         self.tshub_render = TSHubRenderer(
             simid=f"tshub-{self.tshub_env.CONNECTION_LABEL}", # 场景的 ID
@@ -114,6 +124,28 @@ class Tshub3DEnvironment(BaseSumoEnvironment3D):
     def step(self, actions):
         # 1. 与 SUMO 进行交互
         states, rewards, infos, dones = self.tshub_env.step(actions)
+
+        # 1.5 注入虚拟 aircraft 用于 BEV 俯视相机
+        try:
+            tls_id = self.tshub_env.tls_ids[0] if self.tshub_env.tls_ids else None
+            if tls_id and 'tls' in states and tls_id in states['tls']:
+                # 获取路口中心点
+                stop_lines = states['tls'][tls_id].get('in_road_stop_line', {})
+                if stop_lines:
+                    center_list = []
+                    # 先去计算所有 stopline 的中心点, 再计算整体的中心点
+                    for i in range(len(stop_lines)):
+                        center_list.append(calculate_center_point(stop_lines[list(stop_lines.keys())[i]]) )
+                    center = calculate_center_point(center_list)
+                    bev_height = self.aircraft_bev_height
+                    states.setdefault('aircraft', {})
+                    states['aircraft']['junction_cam_1'] = {
+                        'position': [center[0], center[1], bev_height],
+                        'heading': [0.0, 1.0, 0.0],
+                    }
+        except Exception:
+            # 失败时不影响主流程
+            pass
 
         # 2. 渲染 3D 的场景
         sensor_data = self.tshub_render.step(states, should_count_vehicles=self.should_count_vehicles) # 运行 panda3d

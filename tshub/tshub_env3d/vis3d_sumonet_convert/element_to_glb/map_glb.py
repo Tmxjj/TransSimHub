@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2024-07-13 07:26:57
 @Description: 生成 map glb 文件
-@LastEditTime: 2024-07-13 07:51:43
+LastEditTime: 2026-01-11 20:12:39
 '''
 import math
 import warnings
@@ -10,7 +10,8 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import trimesh.visual
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, MultiPolygon
+from shapely.ops import unary_union
 
 from . import OLD_TRIMESH
 from ...vis3d_utils.colors import Colors
@@ -51,7 +52,53 @@ def make_map_glb(
     }
     scene = trimesh.Scene(metadata=metadata)
 
-    meshes = _generate_meshes_from_polygons(polygons)
+    normal_polygons = []
+    junction_groups = {} # Key: JunctionID, Value: List of (Polygon, Metadata)
+
+    for poly, meta in polygons:
+        road_id = str(meta.get("road_id", ""))
+        
+        # 判断是否为内部车道 (SUMO中内部车道ID通常以 ':' 开头)
+        if road_id.startswith(":"):
+            # 推断 Junction ID。通常格式为 :JunctionID_Index
+            # 我们通过去掉最后一个下划线及其后的部分来聚合属于同一交叉口的车道
+            # 例如 :intersection_1_1_0 -> :intersection_1_1
+            junction_id = road_id.rsplit('_', 1)[0]
+            
+            if junction_id not in junction_groups:
+                junction_groups[junction_id] = []
+            junction_groups[junction_id].append((poly, meta))
+        else:
+            # 普通道路直接保留
+            normal_polygons.append((poly, meta))
+
+    processed_polygons = list(normal_polygons)
+
+    # 对每个交叉口组进行几何合并
+    for j_id, items in junction_groups.items():
+        polys_to_merge = [p for p, m in items]
+        
+        # 合并多边形
+        merged_geom = unary_union(polys_to_merge)
+        
+        # 准备元数据 (使用组内第一个元素的元数据，但修改 ID)
+        base_meta = items[0][1].copy()
+        base_meta["road_id"] = j_id
+        if "lane_id" in base_meta:
+            del base_meta["lane_id"] # 合并后不再有单一车道ID
+
+        # unary_union 可能返回 Polygon 或 MultiPolygon
+        if isinstance(merged_geom, Polygon):
+            if not merged_geom.is_empty:
+                processed_polygons.append((merged_geom, base_meta))
+        elif isinstance(merged_geom, MultiPolygon):
+            for geom in merged_geom.geoms:
+                if not geom.is_empty:
+                    processed_polygons.append((geom, base_meta))
+    
+    # 使用处理后的多边形列表生成 Mesh
+    meshes = _generate_meshes_from_polygons(processed_polygons)
+    
     material = PBRMaterial(
         name="RoadDefault",
         baseColorFactor=Colors.DarkGrey.value,

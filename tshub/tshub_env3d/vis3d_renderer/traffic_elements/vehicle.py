@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2024-07-08 22:21:18
 @Description: 3D 场景内的车辆
-LastEditTime: 2025-09-01 15:36:04
+LastEditTime: 2026-01-10 17:08:23
 '''
 import random
 from loguru import logger
@@ -106,7 +106,7 @@ class Vehicle3DElement(BaseElement):
         else:
             # 处理普通背景车辆
             VEHICLE_MODELS = ['a', 'b', 'c', 'd', 'e', 'f']
-            MODEL_WEIGHTS = [1/6, 1/6, 1/12, 1/6, 1/6, 3/12]
+            MODEL_WEIGHTS = [6/30, 6/30, 6/30,  2/30, 6/30,4/30]
             
             selected_model = random.choices(VEHICLE_MODELS, weights=MODEL_WEIGHTS, k=1)[0]
             logger.info(f"随机选择 {selected_model} 作为背景车辆模型")
