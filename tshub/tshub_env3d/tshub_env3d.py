@@ -5,7 +5,7 @@
 - TshubEnvironment （逻辑层）与 SUMO 进行交互, 获得 SUMO 的数据 (这部分利用 TshubEnvironment)，处理车辆运动、红绿灯逻辑、碰撞检测等。
 - TSHubRenderer （视觉层）对 SUMO 的环境进行渲染 (这部分利用 TSHubRenderer)
 - TShubSensor 获得渲染的场景的数据, 作为新的 state 进行输出
-LastEditTime: 2026-01-07 22:36:35
+LastEditTime: 2026-01-13 10:45:06
 '''
 from loguru import logger
 from typing import Any, Dict, List
@@ -55,11 +55,13 @@ class Tshub3DEnvironment(BaseSumoEnvironment3D):
             debuger_print_node:bool = False, # 是否在 reset 的时候打印 node path
             debuger_spin_camera:bool = False, # 是否显示 spin camera
             sensor_config: Dict[str, List[str]] = None,
+            is_render: bool = True, # 是否渲染
         ) -> None:
 
         self.debuger_print_node = debuger_print_node
         self.debuger_spin_camera = debuger_spin_camera
         self.should_count_vehicles = should_count_vehicles
+        self.is_render = is_render
 
         # 初始化 tshub 环境与 sumo 交互
         self.tshub_env = TshubEnvironment(
@@ -87,37 +89,42 @@ class Tshub3DEnvironment(BaseSumoEnvironment3D):
             pass
 
         # 初始化渲染器, 将场景渲染为 3D
-        self.tshub_render = TSHubRenderer(
-            simid=f"tshub-{self.tshub_env.CONNECTION_LABEL}", # 场景的 ID
-            scenario_glb_dir=scenario_glb_dir,
-            sensor_config=sensor_config,
-            preset=preset,
-            resolution=resolution,
-            render_mode=render_mode,
-            vehicle_model=vehicle_model,
-        )
+        if self.is_render:
+            self.tshub_render = TSHubRenderer(
+                simid=f"tshub-{self.tshub_env.CONNECTION_LABEL}", # 场景的 ID
+                scenario_glb_dir=scenario_glb_dir,
+                sensor_config=sensor_config,
+                preset=preset,
+                resolution=resolution,
+                render_mode=render_mode,
+                vehicle_model=vehicle_model,
+            )
+        else:
+            self.tshub_render = None
+            logger.info("SIM: 3D Rendering is DISABLED. Only Physics Simulation will run.")
         
     def reset(self):
         state_infos = self.tshub_env.reset() # 重置 sumo 环境
         logger.info(f'SIM: 完成 TSHub 初始化, 得到地图和信号灯信息.')
+        
+        if self.is_render:
+            self.tshub_render.reset(state_infos) # 重置 render, 需要将信号灯的信息传入, 辅助进行路口 camera 的初始化
 
-        self.tshub_render.reset(state_infos) # 重置 render, 需要将信号灯的信息传入, 辅助进行路口 camera 的初始化
-
-        # 加入一个简单任务, 避免 userExit 出错
-        self.tshub_render._showbase_instance.taskMgr.add(
-            self.tshub_render.dummyTask, "dummyTask"
-        )
-
-        # 重置后打印 node path (查看每次 reset 是否会重置所有 node 和 camera)
-        if self.debuger_print_node:
-            self.tshub_render.print_node_paths(self.tshub_render._root_np)
-
-        # 场景添加相机, 可以进行可视化
-        if self.debuger_spin_camera:
+            # 加入一个简单任务, 避免 userExit 出错
             self.tshub_render._showbase_instance.taskMgr.add(
-                self.tshub_render.test_spin_camera_task, 
-                "SpinCamera"
+                self.tshub_render.dummyTask, "dummyTask"
             )
+
+            # 重置后打印 node path (查看每次 reset 是否会重置所有 node 和 camera)
+            if self.debuger_print_node:
+                self.tshub_render.print_node_paths(self.tshub_render._root_np)
+
+            # 场景添加相机, 可以进行可视化
+            if self.debuger_spin_camera:
+                self.tshub_render._showbase_instance.taskMgr.add(
+                    self.tshub_render.test_spin_camera_task, 
+                    "SpinCamera"
+                )
 
         return state_infos
     
@@ -146,13 +153,21 @@ class Tshub3DEnvironment(BaseSumoEnvironment3D):
         except Exception:
             # 失败时不影响主流程
             pass
-
         # 2. 渲染 3D 的场景
-        sensor_data = self.tshub_render.step(states, should_count_vehicles=self.should_count_vehicles) # 运行 panda3d
-        
-        # 将 image 的信息通过 sensor_data 进行返回
+        if self.is_render and self.tshub_render:
+            sensor_data = self.tshub_render.step(states, should_count_vehicles=self.should_count_vehicles)
+        else:
+            # 组装 sensor_data (不包含 image)
+            sensor_data = {
+                'image': None,
+                'veh_elements': None,
+            }
+
         return states, rewards, infos, dones, sensor_data
+        
+       
 
     def close(self) -> None:
         self.tshub_env._close_simulation()
-        self.tshub_render.destroy()
+        if self.is_render and self.tshub_render:
+            self.tshub_render.destroy()
