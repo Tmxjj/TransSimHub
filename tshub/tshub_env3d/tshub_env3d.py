@@ -5,7 +5,7 @@
 - TshubEnvironment （逻辑层）与 SUMO 进行交互, 获得 SUMO 的数据 (这部分利用 TshubEnvironment)，处理车辆运动、红绿灯逻辑、碰撞检测等。
 - TSHubRenderer （视觉层）对 SUMO 的环境进行渲染 (这部分利用 TSHubRenderer)
 - TShubSensor 获得渲染的场景的数据, 作为新的 state 进行输出
-LastEditTime: 2026-01-13 10:45:06
+LastEditTime: 2026-01-13 16:42:16
 '''
 from loguru import logger
 from typing import Any, Dict, List
