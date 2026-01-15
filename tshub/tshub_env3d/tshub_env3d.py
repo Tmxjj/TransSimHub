@@ -5,7 +5,7 @@
 - TshubEnvironment （逻辑层）与 SUMO 进行交互, 获得 SUMO 的数据 (这部分利用 TshubEnvironment)，处理车辆运动、红绿灯逻辑、碰撞检测等。
 - TSHubRenderer （视觉层）对 SUMO 的环境进行渲染 (这部分利用 TSHubRenderer)
 - TShubSensor 获得渲染的场景的数据, 作为新的 state 进行输出
-LastEditTime: 2026-01-13 16:42:16
+LastEditTime: 2026-01-15 10:53:57
 '''
 from loguru import logger
 from typing import Any, Dict, List
@@ -56,12 +56,14 @@ class Tshub3DEnvironment(BaseSumoEnvironment3D):
             debuger_spin_camera:bool = False, # 是否显示 spin camera
             sensor_config: Dict[str, List[str]] = None,
             is_render: bool = True, # 是否渲染
+            is_every_frame: bool = False, # 是否每一帧都渲染
         ) -> None:
 
         self.debuger_print_node = debuger_print_node
         self.debuger_spin_camera = debuger_spin_camera
         self.should_count_vehicles = should_count_vehicles
         self.is_render = is_render
+        self.is_every_frame = is_every_frame
 
         # 初始化 tshub 环境与 sumo 交互
         self.tshub_env = TshubEnvironment(
@@ -153,8 +155,16 @@ class Tshub3DEnvironment(BaseSumoEnvironment3D):
         except Exception:
             # 失败时不影响主流程
             pass
+
         # 2. 渲染 3D 的场景
-        if self.is_render and self.tshub_render:
+
+        if self.is_every_frame:
+            can_perform_action = True
+        else: 
+            #当前仿真时间点可以执行动作时才渲染
+            can_perform_action = states['tls'][self.tshub_env.tls_ids[0]]['can_perform_action'] if self.tshub_env.tls_ids else False
+            
+        if self.is_render and self.tshub_render and can_perform_action:
             sensor_data = self.tshub_render.step(states, should_count_vehicles=self.should_count_vehicles)
         else:
             # 组装 sensor_data (不包含 image)

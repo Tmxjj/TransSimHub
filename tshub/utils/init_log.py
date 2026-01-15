@@ -5,7 +5,7 @@
 1. INFO 级别的日志打印在控制台;
 2. 仿真相关的日志存储在 SIM 开头的文件
 3. 算法相关的日志存储在 Traing 开头的文件
-LastEditTime: 2026-01-14 22:19:04
+LastEditTime: 2026-01-15 10:36:20
 '''
 import os
 import sys
@@ -40,7 +40,7 @@ def evaluation_filter(record) -> bool:
     """单独过滤出评估过程中的常规日志 (排除 SIM 和 RL)
     """
     # 包含 [EVAL] 或者 [CFG] 的日志都归类到 Evaluator 日志
-    if '[EVAL]' in record['message'] or '[CFG]' in record['message']:
+    if '[EVAL]' in record['message']:
         return True
     return False
 
