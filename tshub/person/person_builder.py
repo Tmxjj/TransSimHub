@@ -56,6 +56,20 @@ class PersonBuilder(BaseBuilder):
         """
         self.people[person_id].update_features(person_info)
 
+    def subscribe_all_persons(self) -> None:
+        """重新订阅所有存在的行人 (Handling subscription loss after LoadState)
+        """
+        valid_ids = set(self.sumo.person.getIDList())
+        to_delete = []
+        for person_id, person in self.people.items():
+            if person_id in valid_ids:
+                person.sumo.person.subscribe(person_id, PersonInfo.SUBSCRIPTION_VARS)
+            else:
+                to_delete.append(person_id)
+        
+        for person_id in to_delete:
+            self.__delete_person(person_id)
+
     def update_objects_state(self) -> None:
         """更新场景中所有行人信息, 包含三个部分:
         1. 对于离开环境的行人，将其从 self.people 中删除；

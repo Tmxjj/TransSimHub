@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2023-08-23 15:25:52
 @Description: 初始化一个场景内所有的车辆
-@LastEditTime: 2024-08-11 19:26:13
+LastEditTime: 2026-01-19 21:46:04
 '''
 from loguru import logger
 from typing import Dict, Any
@@ -73,6 +73,24 @@ class VehicleBuilder(BaseBuilder):
         """
         self.vehicles[vehicle_id].update_features(vehicle_info)
 
+    def subscribe_all_vehicles(self) -> None:
+        """重新订阅所有存在的车辆 (Handling subscription loss after LoadState)
+        同时会清理掉在当前 simulation state 中不存在的车辆。
+        """
+        valid_ids = set(self.sumo.vehicle.getIDList())
+        to_delete = []
+        for vehicle_id, vehicle in self.vehicles.items():
+            if vehicle_id in valid_ids:
+                # Re-subscribe
+                vehicle.sumo.vehicle.subscribe(vehicle_id, VehicleInfo.SUBSCRIPTION_VARS)
+                vehicle.sumo.vehicle.subscribeLeader(vehicle_id, dist=0)
+            else:
+                to_delete.append(vehicle_id)
+        
+        # Cleanup phantom vehicles
+        for vehicle_id in to_delete:
+            self.__delete_vehicle(vehicle_id)
+
     def update_objects_state(self) -> None:
         """更新场景中所有车辆信息, 包含三个部分:
         1. 对于之前就在环境中的车辆，更新这些车辆的信息；
@@ -85,8 +103,10 @@ class VehicleBuilder(BaseBuilder):
         # 更新已存在的车辆信息
         for vehicle_id in vehicle_ids:
             if vehicle_id in self.vehicles:
-                vehicle_info = subscription_results[vehicle_id]
-                self.__update_existing_vehicle(vehicle_id, vehicle_info)
+                # [新增] 安全检查：确保 ID 也在 subscription_results 中
+                if vehicle_id in subscription_results:
+                    vehicle_info = subscription_results[vehicle_id]
+                    self.__update_existing_vehicle(vehicle_id, vehicle_info)
             else:
                 self.create_objects(vehicle_id)
 

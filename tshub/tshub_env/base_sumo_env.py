@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2023-08-23 15:30:01
 @Description: Base tshub Environment
-@LastEditTime: 2024-06-25 17:36:13
+LastEditTime: 2026-01-19 19:39:53
 '''
 import os
 import shutil
@@ -234,6 +234,46 @@ class BaseSumoEnvironment(ABC):
                 self.sumo.setOrder(1) # 这里设置为 1
 
         logger.info(f'SIM: Start Env Label, {self.label}.')
+
+    def _save_state(self, filename: str) -> None:
+        """
+        保存当前 SUMO 仿真状态到指定文件 (Snapshot)。
+        用于 Rollout 机制中的存档。
+
+        :param filename: (str) 保存状态的文件路径。建议使用绝对路径以避免 SUMO 找不到位置。
+        """
+        if self.sumo is None:
+            logger.error("SIM: SUMO is not running, cannot save state.")
+            return
+        
+        # 转换为绝对路径，确保 SUMO 进程能正确写入
+        abs_path = os.path.abspath(filename)
+        
+        try:
+            self.sumo.simulation.saveState(abs_path)
+            logger.debug(f'SIM: Saved state to {abs_path}')
+        except Exception as e:
+            logger.error(f"SIM: Failed to save state to {abs_path}. Error: {e}")
+
+    def _load_state(self, filename: str) -> None:
+        """
+        从指定文件加载 SUMO 仿真状态 (Reset to Snapshot)。
+        用于 Rollout 机制中的读档/回滚。
+
+        :param filename: (str) 状态文件的路径。
+        """
+        if self.sumo is None:
+            logger.error("SIM: SUMO is not running, cannot load state.")
+            return
+
+        # 转换为绝对路径
+        abs_path = os.path.abspath(filename)
+        
+        try:
+            self.sumo.simulation.loadState(abs_path)
+            logger.debug(f'SIM: Loaded state from {abs_path}')
+        except Exception as e:
+            logger.error(f"SIM: Failed to load state from {abs_path}. Error: {e}")
 
     def _close_simulation(self) -> None:
         """关闭仿真

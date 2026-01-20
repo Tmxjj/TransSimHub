@@ -51,6 +51,13 @@ def config_filter(record) -> bool:
         return True
     return False
 
+def golden_filter(record) -> bool:
+    """单独过滤出 Golden Dataset Generation 相关的日志
+    """
+    if '[GOLDEN]' in record['message']:
+        return True
+    return False
+
 def set_logger(log_path, file_log_level="DEBUG", terminal_log_level='INFO'):
     now = datetime.strftime(datetime.now(),'%Y-%m-%d_%H_%M_%S')
     log_path = os.path.join(log_path, now)
@@ -92,6 +99,15 @@ def set_logger(log_path, file_log_level="DEBUG", terminal_log_level='INFO'):
         filter=config_filter, 
         level=file_log_level, 
         rotation="1 MB"
+    )
+
+    # [新增] Golden Generation 日志文件 (捕获所有 [GOLDEN] 开头的日志)
+    logger.add(
+        os.path.join(log_path, './Golden-{time}.log'), 
+        format="{time} | {level:<6} | {name}:{function}:{line} - {message}", 
+        filter=golden_filter, 
+        level=file_log_level, 
+        rotation="7 MB"
     )
 
     # Terminal handler

@@ -28,17 +28,16 @@ class PersonInfo:
     next_edge: str # Returns the next edge on the persons route while it is walking. If there is no further edge or the person is in another stage, returns the empty string.
     sumo: traci.connection.Connection
 
+    SUBSCRIPTION_VARS = [
+        traci.constants.VAR_ANGLE, traci.constants.VAR_POSITION, 
+        traci.constants.VAR_SPEED, traci.constants.VAR_ROAD_ID, 
+        traci.constants.VAR_WAITING_TIME, traci.constants.VAR_NEXT_EDGE,
+        traci.constants.VAR_LANEPOSITION
+    ]
+
     def __post_init__(self) -> None:
         # 订阅行人
-        self.sumo.person.subscribe(
-                self.id,
-                [
-                    traci.constants.VAR_ANGLE, traci.constants.VAR_POSITION, 
-                    traci.constants.VAR_SPEED, traci.constants.VAR_ROAD_ID, 
-                    traci.constants.VAR_WAITING_TIME, traci.constants.VAR_NEXT_EDGE,
-                    traci.constants.VAR_LANEPOSITION
-                ]
-            )
+        self.sumo.person.subscribe(self.id, self.SUBSCRIPTION_VARS)
 
     @classmethod
     def create_person(cls, id: str, angle: float,

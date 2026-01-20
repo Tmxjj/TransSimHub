@@ -45,6 +45,19 @@ class VehicleInfo:
     next_tls: List[str]  # The IDs of the next traffic lights the vehicle will encounter
     sumo: traci.connection.Connection
 
+    SUBSCRIPTION_VARS = [
+        traci.constants.VAR_TYPE,
+        traci.constants.VAR_POSITION, traci.constants.VAR_SPEED,
+        traci.constants.VAR_ROAD_ID, traci.constants.VAR_LANE_ID,
+        traci.constants.VAR_EDGES, traci.constants.VAR_LANE_INDEX,
+        traci.constants.VAR_LANEPOSITION,
+        traci.constants.VAR_WAITING_TIME, traci.constants.VAR_NEXT_TLS,
+        traci.constants.VAR_ACCUMULATED_WAITING_TIME, 
+        traci.constants.VAR_DISTANCE, traci.constants.VAR_ANGLE,
+        traci.constants.VAR_CO2EMISSION, traci.constants.VAR_FUELCONSUMPTION,
+        traci.constants.VAR_SPEED_WITHOUT_TRACI
+    ]
+
     def __post_init__(self) -> None:
         _action = vehicle_action_type(self.action_type)
         if _action == vehicle_action_type.Lane:
@@ -55,21 +68,7 @@ class VehicleInfo:
             self.vehicle_action = LaneWithContinuousSpeedAction(id=self.id, vehicle_type=self.vehicle_type, sumo=self.sumo)
 
         # 订阅车辆
-        self.sumo.vehicle.subscribe(
-                self.id,
-                [
-                    traci.constants.VAR_TYPE,
-                    traci.constants.VAR_POSITION, traci.constants.VAR_SPEED,
-                    traci.constants.VAR_ROAD_ID, traci.constants.VAR_LANE_ID,
-                    traci.constants.VAR_EDGES, traci.constants.VAR_LANE_INDEX,
-                    traci.constants.VAR_LANEPOSITION,
-                    traci.constants.VAR_WAITING_TIME, traci.constants.VAR_NEXT_TLS,
-                    traci.constants.VAR_ACCUMULATED_WAITING_TIME, 
-                    traci.constants.VAR_DISTANCE, traci.constants.VAR_ANGLE,
-                    traci.constants.VAR_CO2EMISSION, traci.constants.VAR_FUELCONSUMPTION,
-                    traci.constants.VAR_SPEED_WITHOUT_TRACI
-                ]
-            )
+        self.sumo.vehicle.subscribe(self.id, self.SUBSCRIPTION_VARS)
         self.sumo.vehicle.subscribeLeader(self.id, dist=0) # vehicle id together with the distance
 
     @classmethod
