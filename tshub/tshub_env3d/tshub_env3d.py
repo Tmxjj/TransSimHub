@@ -5,7 +5,7 @@
 - TshubEnvironment （逻辑层）与 SUMO 进行交互, 获得 SUMO 的数据 (这部分利用 TshubEnvironment)，处理车辆运动、红绿灯逻辑、碰撞检测等。
 - TSHubRenderer （视觉层）对 SUMO 的环境进行渲染 (这部分利用 TSHubRenderer)
 - TShubSensor 获得渲染的场景的数据, 作为新的 state 进行输出
-LastEditTime: 2026-01-15 10:53:57
+LastEditTime: 2026-01-22 22:05:51
 '''
 from loguru import logger
 from typing import Any, Dict, List
@@ -80,12 +80,11 @@ class Tshub3DEnvironment(BaseSumoEnvironment3D):
             time_to_teleport, sumo_seed, tripinfo_output_unfinished, collision_action, 
             remote_port, num_clients
         )
-
         # 记录虚拟 aircraft 高度配置（如未配置则默认 80m）
         self.aircraft_bev_height = 80.0
         try:
             self.aircraft_bev_height = sensor_config.get('aircraft', {}) \
-                .get('junction_cam_1', {}) \
+                .get(f'aircraft_{tls_ids[0]}', {}) \
                 .get('height', 80.0)
         except Exception:
             pass
@@ -131,28 +130,31 @@ class Tshub3DEnvironment(BaseSumoEnvironment3D):
         return state_infos
     
     def step(self, actions):
+        # BUG：states中包含 vehicle, tls, aircraft 三个部分的数据，其中vehicle数据无法保证都在同一个路口的BEV视角下
         # 1. 与 SUMO 进行交互
         states, rewards, infos, dones = self.tshub_env.step(actions)
 
         # 1.5 注入虚拟 aircraft 用于 BEV 俯视相机
         try:
-            tls_id = self.tshub_env.tls_ids[0] if self.tshub_env.tls_ids else None
-            if tls_id and 'tls' in states and tls_id in states['tls']:
-                # 获取路口中心点
-                stop_lines = states['tls'][tls_id].get('in_road_stop_line', {})
-                if stop_lines:
-                    center_list = []
-                    # 先去计算所有 stopline 的中心点, 再计算整体的中心点
-                    for i in range(len(stop_lines)):
-                        center_list.append(calculate_center_point(stop_lines[list(stop_lines.keys())[i]]) )
-                    center = calculate_center_point(center_list)
-                    bev_height = self.aircraft_bev_height
-                    states.setdefault('aircraft', {})
-                    states['aircraft']['junction_cam_1'] = {
-                        'position': [center[0], center[1], bev_height],
-                        'heading': [0.0, 1.0, 0.0],
-                    }
-        except Exception:
+            tls_ids = self.tshub_env.tls_ids if self.tshub_env.tls_ids else []
+            for tls_id in tls_ids:
+                if tls_id and 'tls' in states and tls_id in states['tls']:
+                    # 获取路口中心点
+                    stop_lines = states['tls'][tls_id].get('in_road_stop_line', {})
+                    if stop_lines:
+                        center_list = []
+                        # 先去计算所有 stopline 的中心点, 再计算整体的中心点
+                        for i in range(len(stop_lines)):
+                            center_list.append(calculate_center_point(stop_lines[list(stop_lines.keys())[i]]) )
+                        center = calculate_center_point(center_list)
+                        bev_height = self.aircraft_bev_height
+                        states.setdefault('aircraft', {})
+                        states['aircraft'][f'aircraft_{tls_id}'] = {
+                            'position': [center[0], center[1], bev_height],
+                            'heading': [0.0, 1.0, 0.0],
+                        }
+        except Exception as e:
+            logger.warning(f"SIM: Inject aircraft for BEV camera failed: {e}")
             # 失败时不影响主流程
             pass
 
@@ -161,8 +163,14 @@ class Tshub3DEnvironment(BaseSumoEnvironment3D):
         if self.is_every_frame:
             can_perform_action = True
         else: 
-            #当前仿真时间点可以执行动作时才渲染
-            can_perform_action = states['tls'][self.tshub_env.tls_ids[0]]['can_perform_action'] if self.tshub_env.tls_ids else False
+            # 当前仿真时间点可以执行动作时才渲染
+            # 支持多路口: 只要有一个路口可以执行动作(且需要渲染), 则进行渲染
+            can_perform_action = False
+            tls_ids = self.tshub_env.tls_ids if self.tshub_env.tls_ids else []
+            for tls_id in tls_ids:
+                if tls_id in states['tls'] and states['tls'][tls_id]['can_perform_action']:
+                    can_perform_action = True
+                    break
             
         if self.is_render and self.tshub_render and can_perform_action:
             sensor_data = self.tshub_render.step(states, should_count_vehicles=self.should_count_vehicles)

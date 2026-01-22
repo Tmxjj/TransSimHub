@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2023-08-23 15:34:52
 @Description: 整合 "Veh"（车辆）、"Air"（航空）和 "Traf"（信号灯）的环境
-LastEditTime: 2026-01-20 11:35:07
+LastEditTime: 2026-01-22 19:45:04
 '''
 import os
 import sys
@@ -190,7 +190,7 @@ class TshubEnvironment(BaseSumoEnvironment):
         1、“完全停下的排队长度”：直接使用 tls_obs['J1']['jam_length_vehicle'] 累加即可
         2、“包含缓慢移动的拥堵程度”：建议结合 last_step_mean_speed 和 last_step_occupancy 来综合判断
         """
-        total_reward = 0.0
+        total_rewards_dict = {}
         
         # 权重参数
         w_queue = 1.0   # 排队惩罚权重
@@ -221,9 +221,9 @@ class TshubEnvironment(BaseSumoEnvironment):
             # 3. 聚合单路口奖励
             # 速度越快越好(正)，排队越少越好(负)
             step_reward = (w_speed * avg_speed) - (w_queue * current_queue_score)
-            total_reward += step_reward
+            total_rewards_dict[tls_id] = step_reward
 
-        return total_reward
+        return total_rewards_dict
 
     def __compute_info(self):
         """每一步, 返回信息
