@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2023-08-25 17:09:18
 @Description: Choose Next Phase
-@LastEditTime: 2024-04-16 12:46:11
+LastEditTime: 2026-01-27 11:48:22
 '''
 from loguru import logger
 from .base_tls import BaseTLS
@@ -36,7 +36,7 @@ class choose_next_phase(BaseTLS):
                                                     self.sim_step,
                                                     self.phase_index, 
                                                     self.sumo.trafficlight.getRedYellowGreenState(self.id)))
-            self.next_action_time = self.sim_step + self.delta_time # 重置下一次执行 action 的时间
+            self.next_action_time = self.sim_step + self.delta_time +self.yellow_time # 重置下一次执行 action 的时间 ，这里需要加上黄灯的时间, 但为了保证和相位改变时一致
         else: # 相位改变, 首先切换为黄灯, 接着使用 update 切换为绿灯
             self.sumo.trafficlight.setPhase(self.id, self.yellow_dict[(self.phase_index, new_phase)])  # turns yellow
             logger.debug('SIM: Time: {}; Yellow: Action: {}; State: {};'.format(
