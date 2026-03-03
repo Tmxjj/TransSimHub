@@ -3,7 +3,7 @@
 @Date: 2024-07-03 16:05:08
 @Description: 将 SUMO Net 转换为 glb 文件
 这部分修改自, https://github.com/huawei-noah/SMARTS/blob/master/smarts/core/sumo_road_network.py
-@LastEditTime: 2024-07-19 15:40:39
+LastEditTime: 2026-03-03 10:20:32
 '''
 import math
 import sumolib
@@ -57,7 +57,37 @@ class SumoNet3D():
             glb_dir (str): glb 文件输出路径
         """
         polys = self._compute_road_polygons()
-        lane_dividers, edge_dividers = self._compute_traffic_dividers()
+        lane_dividers, road_borders_no_middle, middle_lines = self._compute_traffic_dividers()
+        
+        # Merge separated borders for map_glb if needed, or check if map_glb needs them separately.
+        # map_glb appears to use 'lane_dividers' and 'edge_dividers'. 
+        # 'edge_dividers' in original code was all borders + closures.
+        # We need to reconstruct 'edge_dividers' for map_glb or update map_glb call.
+        # Looking at original code:
+        # map_glb = make_map_glb(..., edge_dividers=edge_dividers)
+        # We can combine them for map_glb to match previous behavior if map_glb needs boundaries.
+        # But wait, make_map_glb uses them likely for visualization or logic.
+        # Let's verify make_map_glb usage. Passing "road_borders_no_middle + middle_lines" might not be exactly same order 
+        # but semantically should cover borders. 
+        # Actually middle_lines now has doubled lines. 
+        # Original edge_dividers had: Right Side, Left Side, Closure.
+        # New split: road_borders_no_middle (Right Side, Closure), middle_lines (Left Side, Left Side Shifted).
+        # We should probably pass the ORIGINAL set of dividers to map_glb if it relies on standard borders.
+        # However, looking at _compute_traffic_dividers implementation below, I will modify it to return what we need.
+        
+        # For map_glb, let's just pass road_borders_no_middle (which has outer and closure). 
+        # If map_glb needs inner borders, we might need to pass them.
+        # Without reading make_map_glb, I should be safe and reconstruct a list similar to old edge_dividers if possible, 
+        # OR assume map_glb is robust.
+        # But for 'road_lines.glb' replacement, we definitely need the separated lists.
+        
+        # Let's combine them for map_glb to ensure we don't break it?
+        # But the split is specifically for the GLB output.
+        # Let's assume map_glb can handle the list of lines.
+        # I'll pass road_borders_no_middle + middle_lines to edge_dividers.
+        
+        edge_dividers = road_borders_no_middle + middle_lines
+        
         map_glb = make_map_glb(
             polygons=polys, 
             bbox=self.bounding_box, 
@@ -69,8 +99,11 @@ class SumoNet3D():
         ground_glb = make_ground_glb(self.bounding_box)
         ground_glb.write_glb(Path(glb_dir) / "ground.glb")
         
-        road_lines_glb = make_road_glb(edge_dividers)
-        road_lines_glb.write_glb(Path(glb_dir) / "road_lines.glb")
+        road_lines_wo_middle_glb = make_road_glb(road_borders_no_middle)
+        road_lines_wo_middle_glb.write_glb(Path(glb_dir) / "road_lines_wo_middle.glb")
+
+        middle_lines_glb = make_road_glb(middle_lines)
+        middle_lines_glb.write_glb(Path(glb_dir) / "middle_lines.glb")
 
         lane_lines_glb = make_line_glb(lane_dividers)
         lane_lines_glb.write_glb(Path(glb_dir) / "lane_lines.glb")
@@ -284,7 +317,8 @@ class SumoNet3D():
     # Step 2, 计算车道分割线
     # ------------------- #
     def _compute_traffic_dividers(self):
-        edge_borders = [] # 存储道路边缘的边界, 保存为 road_lines
+        road_borders_no_middle = [] # 存储道路边缘的边界, 保存为 road_lines (excluding middle)
+        middle_lines = [] # 中间分隔线
         lane_dividers = [] # 车道分割线, 保存为 lane_lines
 
         # 1. 获得道路边界和车道分割线
@@ -294,6 +328,11 @@ class SumoNet3D():
                 continue
 
             lanes = edge.getLanes() # 获得所有 edge 的 lane
+            
+            # Temporary storage for closure
+            current_edge_outer = None
+            current_edge_inner = None
+
             for i in range(len(lanes)):
                 shape = lanes[i].getShape()
                 left_side = sumolib.geomhelper.move2side(
@@ -305,10 +344,22 @@ class SumoNet3D():
 
                 # Edge Board 里面有第一个边和最后一个边
                 if i == 0:
-                    edge_borders.append(right_side)
+                    road_borders_no_middle.append(right_side)
+                    current_edge_outer = right_side
 
                 if i == len(lanes) - 1:
-                    edge_borders.append(left_side)
+                    # Leftmost lane's left side is the middle line
+                    # middle_lines.append(left_side)
+                    current_edge_inner = left_side
+                    
+                    # Generate a second line for the middle line (double yellow line effect)
+                    # Shift slightly into the lane (to the right of the left boundary)
+                    offset = 0.3 # 0.5 meters into the lane
+                    shifted_left_side = sumolib.geomhelper.move2side(
+                        shape, 
+                        -lanes[i].getWidth() / 2 + offset
+                    )
+                    middle_lines.append(shifted_left_side)
                 else: # 其他的放在 lane driver 里面, lane 的间隔可以不需要很密
                     lane_dividers.append(SumoNet3D.interpolate_points(
                         points=left_side, 
@@ -316,14 +367,15 @@ class SumoNet3D():
                     )
                 )
             # 将 road 边缘可以封闭 (例如有路口停车线)
-            edge_borders.append(
-                [
-                    edge_borders[-2][-1], # 新加入的两条边的最后一个点
-                    edge_borders[-1][-1]
-                ]
-            )
+            if current_edge_outer and current_edge_inner:
+                road_borders_no_middle.append(
+                    [
+                        current_edge_outer[-1], # 新加入的两条边的最后一个点
+                        current_edge_inner[-1]
+                    ]
+                )
 
-        return lane_dividers, edge_borders
+        return lane_dividers, road_borders_no_middle, middle_lines
 
     @staticmethod
     def interpolate_points(points, distance=1):

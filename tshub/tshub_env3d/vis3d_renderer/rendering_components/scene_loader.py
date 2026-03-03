@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2024-07-12 21:38:26
 @Description: 场景加载相关的方法 (用于初始化场景)
-LastEditTime: 2026-01-08 17:41:21
+LastEditTime: 2026-02-24 22:49:34
 '''
 from pathlib import Path
 from loguru import logger
@@ -33,7 +33,9 @@ class SceneLoader(object):
     MAP_FILENAME = "map.glb"
     TERRAIN_FILENAME = "ground.glb"
     LANE_FILENAME = "lane_lines.glb"
-    ROAD_FILENAME = "road_lines.glb"
+# --- 修改点1：确认文件名对应关系 ---
+    ROAD_FILENAME = "road_lines_wo_middle.glb" # 边缘线（白）
+    MIDDLE_FILENAME = "middle_lines.glb"      # 中央分隔带（黄）
     TURN_FILENAME = "turn.glb"
 
     def __init__(
@@ -63,7 +65,10 @@ class SceneLoader(object):
         self._root_np.set_antialias(AntialiasAttrib.MAuto)
 
         self.load_map()
-        self.load_road_lines()
+        # --- 分别加载白色边缘线和黄色中央线 ---
+        self.load_road_lines_white()
+        self.load_road_lines_yellow()
+
         self.load_lane_lines()
         self.load_turn_marking()
         self.load_flat_terrain()
@@ -108,35 +113,55 @@ class SceneLoader(object):
         return map_np
 
 
-    def load_road_lines(self):
-        """Road lines (solid, yellow)
-        """
+    def load_road_lines_white(self):
+        """加载道路边界线 (通常为实线，白色)"""
         road_lines_path = self.scenario_glb_dir / SceneLoader.ROAD_FILENAME
-        logger.info(f"SIM: 加载道路边界线, {road_lines_path}.")
+        logger.info(f"SIM: 加载道路边界线(白), {road_lines_path}.")
         if road_lines_path.exists():
-            road_lines_np = self._load_line_data(road_lines_path, "road_lines")
-            solid_lines_np = self._root_np.attachNewNode(road_lines_np)
+            # 修改点2：节点名设为 road_edge
+            road_lines_node = self._load_line_data(road_lines_path, "road_edge")
+            edge_lines_np = self._root_np.attachNewNode(road_lines_node)
 
-            # 设置深度偏移：数值越大，视觉上越靠前。1 是常用的起步值。这强制实线在路面之上渲染
-            solid_lines_np.setDepthOffset(1) 
-            # 将其放在 Fixed Bin 或 Transparent Bin，确保它在不透明物体(路面)之后绘制
-            solid_lines_np.setBin("fixed", 10)
+            edge_lines_np.setDepthOffset(1) 
+            edge_lines_np.setBin("fixed", 10)
             
+            edge_lines_np.hide(CamMask.AllOn)
+            edge_lines_np.show(CamMask.MapMask)
             
-            # 定义 mask
-            solid_lines_np.hide(CamMask.AllOn)
-            solid_lines_np.show(CamMask.MapMask) # 只给部分 camera 展示
-            # 设置车道边线的颜色
-            solid_lines_np.setColor(SceneColors.EdgeDivider.value)
-            solid_lines_np.setRenderModeThickness(3) # 设置显示的粗细
-            solid_lines_np.setLightOff(1)  # 边线不参与光照/阴影（不被照亮）
+            # 设置边缘线颜色（白色）
+            edge_lines_np.setColor(SceneColors.EdgeDivider.value)
+            edge_lines_np.setRenderModeThickness(3)
+            edge_lines_np.setLightOff(1)
+            edge_lines_np.set_depth_write(False)
+            logger.info(f"SIM: 加载道路边界线成功.")
+            return edge_lines_np
+        return None
+    
+    def load_road_lines_yellow(self):
+        """加载道路中央分隔带 (通常为黄色)"""
+        road_middle_path = self.scenario_glb_dir / SceneLoader.MIDDLE_FILENAME
+        logger.info(f"SIM: 加载道路中央分隔带(黄), {road_middle_path}.")
+        if road_middle_path.exists():
+            # 修改点3：节点名设为 road_middle，确保独立性
+            road_middle_node = self._load_line_data(road_middle_path, "road_middle")
+            middle_lines_np = self._root_np.attachNewNode(road_middle_node)
             
-            # 关闭深度写入：防止产生阴影，同时解决贴地闪烁问题
-            solid_lines_np.set_depth_write(False)
-            logger.info(f"SIM: 加载道路线成功.")
-        return solid_lines_np
+            middle_lines_np.setDepthOffset(1) 
+            middle_lines_np.setBin("fixed", 10)
+            
+            middle_lines_np.hide(CamMask.AllOn)
+            middle_lines_np.show(CamMask.MapMask)
+            
+            # 设置中央线颜色（黄色）
+            # 注意：请确保 SceneColors.MedialDivider.value 已被定义为亮黄色 (1, 1, 0, 1)
+            middle_lines_np.setColor(SceneColors.MedialDivider.value)
+            middle_lines_np.setRenderModeThickness(3)
+            middle_lines_np.setLightOff(1)
+            middle_lines_np.set_depth_write(False)
+            logger.info(f"SIM: 加载中央分隔带成功.")
+            return middle_lines_np
+        return None
 
-    #TODO： 增加左转、知行、右转箭头的加载
     def load_lane_lines(self):
         """Lane lines (dashed, white)
         """

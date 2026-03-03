@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2024-07-05 22:18:36
 @Description: 3D 渲染过程中需要使用的颜色
-LastEditTime: 2026-01-08 16:12:36
+LastEditTime: 2026-02-24 22:36:57
 '''
 from enum import Enum
 
@@ -59,6 +59,7 @@ class SceneColors(Enum):
     MissionRoute = Colors.GreenTransparent.value
     LaneDivider = Colors.OffWhite.value
     EdgeDivider = Colors.White.value
+    MedialDivider = Colors.Yellow.value
     Ground = Colors.Asphalt.value
 
     SignalUnknown = Colors.Grey.value
