@@ -5,7 +5,7 @@
 - TshubEnvironment （逻辑层）与 SUMO 进行交互, 获得 SUMO 的数据 (这部分利用 TshubEnvironment)，处理车辆运动、红绿灯逻辑、碰撞检测等。
 - TSHubRenderer （视觉层）对 SUMO 的环境进行渲染 (这部分利用 TSHubRenderer)
 - TShubSensor 获得渲染的场景的数据, 作为新的 state 进行输出
-LastEditTime: 2026-01-22 22:05:51
+LastEditTime: 2026-03-06 15:49:03
 '''
 from loguru import logger
 from typing import Any, Dict, List
@@ -129,6 +129,75 @@ class Tshub3DEnvironment(BaseSumoEnvironment3D):
 
         return state_infos
     
+    def _calculate_bev_lane_vehicle_counts(self, states):
+        #NOTE：该函数的目的是计算在 BEV 视角下, 各个进口车道上真实存在的车辆数量, 只针对于杭州、济南、纽约这些规整的数据集
+        """计算BEV图片覆盖范围内，各个进口车道上的真实车辆数"""
+        bev_lane_vehicle_counts = {}
+        try:
+            veh_states = states.get('vehicle', {})
+            tls_states = states.get('tls', {})
+            tls_ids_list = self.tshub_env.tls_ids if self.tshub_env.tls_ids else []
+            
+            for tls_id in tls_ids_list:
+                if tls_id not in tls_states:
+                    continue
+                tls_info = tls_states[tls_id]
+                stop_lines = tls_info.get('in_road_stop_line', {})
+                if not stop_lines:
+                    continue
+                
+                # 获取路口中心点
+                center_list = []
+                for i in range(len(stop_lines)):
+                    center_list.append(calculate_center_point(stop_lines[list(stop_lines.keys())[i]]))
+                center = calculate_center_point(center_list)
+                
+                import math
+                # --- 计算真实的 BEV 相机地面视野边界范围 ---
+                fov_h = 90 # 目前构建相机时使用的水平视野角 (FOV) 为 90 度
+                fig_w, fig_h = 800, 600 # 默认长宽
+                if self.is_render and self.tshub_render and hasattr(self.tshub_render, 'scene_sync'):
+                    fig_w = self.tshub_render.scene_sync.fig_width
+                    fig_h = self.tshub_render.scene_sync.fig_height
+                aspect_ratio = fig_w / fig_h
+                
+                # 依据三角函数，计算中心点到视野矩形边缘的横向/纵向物理距离
+                coverage_x = self.aircraft_bev_height * math.tan(math.radians(fov_h / 2))
+                coverage_y = coverage_x / aspect_ratio
+                # ------------------------------------------
+                
+                # 确定需要统计的目标进口车道
+                target_lanes = set()
+                in_roads = tls_info.get('in_roads', [])
+                roads_lanes = tls_info.get('roads_lanes', {})
+                if roads_lanes:
+                    for road in in_roads:
+                        lanes = roads_lanes.get(road, [])
+                        for lane in lanes:
+                            target_lanes.add(lane)
+                            
+                # 初始化车道计数字典
+                lane_counts = {lane: 0 for lane in target_lanes}
+                
+                # 遍历所有车辆并进行边界框筛选计数
+                if target_lanes:
+                    for veh_id, veh_info in veh_states.items():
+                        veh_lane = veh_info.get('lane_id')
+                        if veh_lane in target_lanes:
+                            veh_pos = veh_info.get('position')
+                            if veh_pos and center:
+                                dx = abs(veh_pos[0] - center[0])
+                                dy = abs(veh_pos[1] - center[1])
+                                # 判断车辆是否在当前相机的地面矩形可见范围内
+                                if dx <= coverage_x and dy <= coverage_y:
+                                    lane_counts[veh_lane] += 1
+                                    
+                bev_lane_vehicle_counts[f'aircraft_{tls_id}'] = lane_counts
+        except Exception as e:
+            logger.warning(f"SIM: Failed to calculate BEV lane vehicle counts: {e}")
+            
+        return bev_lane_vehicle_counts
+
     def step(self, actions):
         # BUG：states中包含 vehicle, tls, aircraft 三个部分的数据，其中vehicle数据无法保证都在同一个路口的BEV视角下
         # 1. 与 SUMO 进行交互
@@ -174,11 +243,15 @@ class Tshub3DEnvironment(BaseSumoEnvironment3D):
             
         if self.is_render and self.tshub_render and can_perform_action:
             sensor_data = self.tshub_render.step(states, should_count_vehicles=self.should_count_vehicles)
+            # --- 新增功能：计算BEV视角下各个进口道的车道车辆数 ---
+            sensor_data['bev_lane_vehicle_counts'] = self._calculate_bev_lane_vehicle_counts(states)
+            
         else:
             # 组装 sensor_data (不包含 image)
             sensor_data = {
                 'image': None,
                 'veh_elements': None,
+                'bev_lane_vehicle_counts': None
             }
 
         return states, rewards, infos, dones, sensor_data

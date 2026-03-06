@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2024-07-13 20:53:01
 @Description: 场景的同步, 根据 SUMO 的信息更新 panda3d
-LastEditTime: 2026-01-07 22:14:29
+LastEditTime: 2026-03-05 15:00:07
 '''
 import math
 from loguru import logger
@@ -57,7 +57,8 @@ class SceneSync(object):
             '720P': (1280, 720),  # 1280x720（HD 标清）
             '1080P': (1920, 1080), # 1920x1080（Full HD）
             'SQUARE_512': (512, 512), # 自定义 1:1 长宽比
-            'SQUARE_1024': (1024, 1024)
+            'SQUARE_1024': (1024, 1024), # 自定义 1:1 长宽比
+            'SQUARE_2048': (2048, 2048) # 自定义 1:1 长宽比
         }
         if preset not in presets:
             raise ValueError(f"Invalid preset: {preset}. Valid presets are: {list(presets.keys())}")
