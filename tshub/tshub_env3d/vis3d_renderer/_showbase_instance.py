@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2024-07-03 23:43:42
 @Description: 继承 ShowBase, Panda3D 的主界面
-LastEditTime: 2025-07-28 22:25:17
+LastEditTime: 2026-03-16 11:31:43
 '''
 from ...utils.get_abs_path import get_abs_path
 current_file_path = get_abs_path(__file__)
@@ -11,6 +11,7 @@ import simplepbr
 from loguru import logger
 from threading import Lock
 from direct.showbase.ShowBase import ShowBase
+from panda3d.core import GraphicsPipeSelection
 
 from panda3d.core import (
     NodePath,
@@ -36,28 +37,63 @@ class _ShowBaseInstance(ShowBase):
     def __new__(cls, use_render_pipeline=False):
         # Singleton pattern:  ensure only 1 ShowBase instance
         if "__it__" not in cls.__dict__:
+            # ==========================================
+            # 1. 驱动预检逻辑 (Pre-flight Check)
+            # ==========================================
+            selection = GraphicsPipeSelection.get_global_ptr()
+            logger.info("SIM: 正在扫描系统显卡驱动管道...")
+            
+            supported_pipes = []
+            for i in range(selection.get_num_pipe_types()):
+                pipe_type = selection.get_pipe_type(i)
+                supported_pipes.append(pipe_type.name)
+            
+            logger.info(f"SIM: 系统可用渲染管道: {supported_pipes}")
+            
+            # 尝试创建默认管道，验证驱动是否真的能跑通
+            temp_pipe = selection.make_default_pipe()
+            if temp_pipe is None:
+                error_msg = (
+                    "!!! 关键错误: 无法创建图形管道 (Graphics Pipe) !!!\n"
+                    "原因分析: \n"
+                    "1. 物理显卡驱动 (NVIDIA/AMD) 未正确安装或损坏。\n"
+                    "2. 缺少必要库 (libEGL.so, libGL.so)。\n"
+                    "3. 环境变量 LD_LIBRARY_PATH 未指向驱动路径。\n"
+                    "由于你已禁用 tinydisplay，程序将立即终止。"
+                )
+                logger.error(error_msg)
+                raise RuntimeError(error_msg)
+            
+            logger.success(f"SIM: 成功连接 GPU 驱动: {temp_pipe.get_interface_name()}")
+            # ==========================================
             if cls._debug_mode <= DEBUG_MODE.INFO:
                 cls.load_config("gl-debug", "#t") # 启用 OpenGL 的调试模式
                 cls.load_config("want-pstats", "1") # 启用 Panda3D 的性能统计工具 PStats
             
-            # 设置渲染后端，例如"pandagl"，由类属性决定
-            cls.load_config("load-display", cls._rendering_backend)
-            cls.load_config("window-title", "TSHub 3D") # 设置窗口标题
+            # 彻底强制采用纯无头 GPU 渲染 (EGL)
+            cls.load_config("load-display", "egl")
+            cls.load_config("window-type", "offscreen")
+            cls.load_config("gl-debug", "#f")
             
-            # 设置辅助渲染器, 辅助显示后端可以在主显示后端无法使用时作为备选
+            # 设置辅助渲染器
             aux_displays = [
-                "pandagl", "pandadx9", "pandadx8", 
-                "pandagles", "pandagles2", "p3headlessgl", "p3tinydisplay"
+                "p3headlessgl"
             ]
+
             for display in aux_displays:
                 cls.load_config("aux-display", display)
 
             # Load other configurations
             configs = {
+                "gl-version": "3 3",
                 "sync-video": "false", # 禁用垂直同步，否则渲染速率会被限制为屏幕的刷新率
                 "model-cache-compressed-textures": "1", # 启用模型缓存中的压缩纹理，这可以减少内存使用，提高性能。
-                "framebuffer-multisample": "1", # 启用帧缓冲区多重采样，这是抗锯齿技术的一种，可以提高渲染图形的质量。
-                "multisamples": "8", # 设置多重采样的数量，这里设置为8，这将进一步提高抗锯齿的效果，但可能会增加图形处理的负担。
+                # 【提速点1】降低或关闭抗锯齿，大幅减少多相机时的显存带宽占用
+                "framebuffer-multisample": "0", 
+                "multisamples": "0", 
+                # 【提速点2】告诉引擎火力全开，禁止帧间休眠和线程让出阻塞
+                "yield-timeslice": "false",
+                "client-sleep": "0",
                 "audio-library-name": "null", # 禁用音频库，不处理音频输出
                 "notify-level": cls._debug_mode.name.lower(), # 设置通知级别
                 "default-directnotify-level": cls._debug_mode.name.lower(), # 设置默认的直接通知级别
@@ -90,7 +126,7 @@ class _ShowBaseInstance(ShowBase):
             elif _ShowBaseInstance._render_mode == "onscreen":
                 super().__init__() # 开启可视化界面
             simplepbr.init(
-                msaa_samples=16,
+                msaa_samples=0, # 【提速点1-补充】将 PBR 原本极高的 16 倍抗锯齿设为0（极致性能），BEV不需要极高抗锯齿
                 use_hardware_skinning=True,
                 use_normal_maps=True,
                 use_330=False

@@ -26,28 +26,18 @@ class _BaseOffCameraMixin:
     showbase_instance: _ShowBaseInstance
 
     def wait_for_ram_image(self, img_format: str, retries=100):
-        """Attempt to acquire a graphics buffer.
-        """
-        # Rarely, we see dropped frames where an image is not available
-        # for our observation calculations.
-        #
-        # We've seen this happen fairly reliable when we are initializing
-        # a multi-agent + multi-instance simulation.
-        #
-        # To deal with this, we can try to force a render and block until
-        # we are fairly certain we have an image in ram to return to the user
-        for i in range(retries):
-            region = self.buffer.getDisplayRegion(0)
-            region.window.engine.renderFrame()
-            if self.tex.mightHaveRamImage(): # 检查 RAM 是否有图像
-                break
-            logger.debug(
-                f"SIM: No image available (attempt {i}/{retries}), forcing a render"
-            )
-
+        if not self.tex.mightHaveRamImage():
+            for i in range(retries):
+                # 【提速点3】多相机并行的重大优化：
+                # 不再针对单个相机(region)进行强同步碎片化渲染，而是调用全局引擎统一渲染（保证GPU批处理，避免渲染管线反复中断）
+                self.showbase_instance.graphicsEngine.renderFrame()
+                if self.tex.mightHaveRamImage():
+                    break
+                logger.debug(f"SIM: No image available (attempt {i}/{retries}), forcing a render")
+        
         assert self.tex.mightHaveRamImage()
         ram_image = self.tex.getRamImageAs(img_format)
-        assert ram_image is not None # 必须要返回一个 image
+        assert ram_image is not None
         return ram_image
 
     @property
