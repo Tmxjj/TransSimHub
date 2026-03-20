@@ -21,17 +21,6 @@ from ..vis3d_renderer.base_render import BaseRender, DEBUG_MODE
 from ...utils.get_abs_path import get_abs_path
 from panda3d.core import loadPrcFileData
 
-# 全局开启多线程渲染管线（Cull/Draw分离）和关闭垂直同步进行GPU加速
-loadPrcFileData("", "threading-model Cull/Draw")
-loadPrcFileData("", "sync-video false")
-loadPrcFileData("", "gl-check-errors false")
-
-# 【深度锁定纯硬件 GPU】：
-loadPrcFileData("", "hardware-animated-vertices true")
-# 头号优先级：直接调用 EGL 接口，这是唯一不需要桌面系统也可跑满 GPU 的通道
-loadPrcFileData("", "load-display egl")
-# 备用依次递减，但绝对不包含 p3tinydisplay
-loadPrcFileData("", "aux-display p3headlessgl")
 
 # 场景渲染步骤
 from .rendering_components import (

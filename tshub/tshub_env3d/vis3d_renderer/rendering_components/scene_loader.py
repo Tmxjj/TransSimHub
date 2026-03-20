@@ -4,6 +4,9 @@
 @Description: 场景加载相关的方法 (用于初始化场景)
 LastEditTime: 2026-02-24 22:49:34
 '''
+from ....utils.get_abs_path import get_abs_path
+current_file_path = get_abs_path(__file__)
+
 from pathlib import Path
 from loguru import logger
 from panda3d.core import (
@@ -33,7 +36,6 @@ class SceneLoader(object):
     MAP_FILENAME = "map.glb"
     TERRAIN_FILENAME = "ground.glb"
     LANE_FILENAME = "lane_lines.glb"
-# --- 修改点1：确认文件名对应关系 ---
     ROAD_FILENAME = "road_lines_wo_middle.glb" # 边缘线（白）
     MIDDLE_FILENAME = "middle_lines.glb"      # 中央分隔带（黄）
     TURN_FILENAME = "turn.glb"
@@ -94,8 +96,8 @@ class SceneLoader(object):
             node_path.setColor(SceneColors.Road.value,1) # 修改调色 override=1 表示将原来的颜色完全覆盖
 
             # 如果原来的路面有纹理，setColor 只会变成“染色”。如果你想完全替换成纯色，需要把纹理和材质关掉 （直接修改glb会更好）
-            # node_path.setTextureOff(1)  # 强制移除贴图
-            # node_path.setMaterialOff(1) # 强制移除自带材质(防止反光/颜色干扰)
+            node_path.setTextureOff(1)  # 强制移除贴图
+            node_path.setMaterialOff(1) # 强制移除自带材质(防止反光/颜色干扰)
 
             map_bounds = map_np.getBounds()
             self.map_radius = map_bounds.getRadius()
@@ -397,8 +399,9 @@ class SceneLoader(object):
             # 强制覆盖材质/纹理并着色，允许光照/阴影
             ground_np.setTextureOff(1) # 撕掉贴图（草地、水泥）
             # ground_np.setMaterialOff(1) # 撕掉材质，忽略GLB定义的粗糙或反光
-            ground_np.setShaderOff(1) # 不参与自动着色/阴影
-            ground_np.setLightOff(1)  # 不受灯光影响，不接收/投射阴影
+            # 让地面恢复对光照和阴影的敏感度
+            # ground_np.setShaderOff(1) # 不参与自动着色/阴影
+            # ground_np.setLightOff(1)  # 不受灯光影响，不接收/投射阴影
             ground_np.setTransparency(False)
             ground_np.setColor(SceneColors.Ground.value, 1)  # 修改调色 override=1
             
