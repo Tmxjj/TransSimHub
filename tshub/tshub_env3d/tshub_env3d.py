@@ -5,16 +5,62 @@
 - TshubEnvironment （逻辑层）与 SUMO 进行交互, 获得 SUMO 的数据 (这部分利用 TshubEnvironment)，处理车辆运动、红绿灯逻辑、碰撞检测等。
 - TSHubRenderer （视觉层）对 SUMO 的环境进行渲染 (这部分利用 TSHubRenderer)
 - TShubSensor 获得渲染的场景的数据, 作为新的 state 进行输出
-LastEditTime: 2026-03-06 15:49:03
+LastEditTime: 2026-03-22 23:33:31
 '''
+import os
+import sys
 from loguru import logger
 from typing import Any, Dict, List
+
+from utils.generate_events import EventManager
 
 from .base_env3d import BaseSumoEnvironment3D
 
 from ..tshub_env.tshub_env import TshubEnvironment # tshub 与 sumo 交互
 from .vis3d_utils.core_math import calculate_center_point
 from .vis3d_renderer.tshub_render import TSHubRenderer # tshub3D render
+
+import xml.etree.ElementTree as ET
+import os
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+
+# 辅助函数，从sumocfg中去netfile的路径
+def get_sumo_net_file(config_file):
+    try:
+        # 1. 解析 XML 文件
+        tree = ET.parse(config_file)
+        root = tree.getroot()
+
+        # 2. 寻找 input 标签下的 net-file 标签
+        # .sumocfg 的结构通常是 configuration -> input -> net-file
+        net_file_node = root.find(".//net-file")
+
+        if net_file_node is not None:
+            # 3. 获取 value 属性
+            net_file_path = net_file_node.get("value")
+            return net_file_path
+        else:
+            print(f"❌ 错误: 在 {config_file} 中未找到 <net-file> 标签")
+            return None
+
+    except ET.ParseError:
+        print(f"❌ 错误: 无法解析文件 {config_file}，请检查是否为标准 XML 格式")
+        return None
+    except FileNotFoundError:
+        print(f"❌ 错误: 找不到文件 {config_file}")
+        return None
+
+
+def get_absolute_net_path(sumocfg_path):
+    net_val = get_sumo_net_file(sumocfg_path)
+    if net_val:
+        # 获取 .sumocfg 所在的文件夹目录
+        base_dir = os.path.dirname(os.path.abspath(sumocfg_path))
+        # 拼接成绝对路径并规范化（处理 ./ 或 ../）
+        abs_net_path = os.path.normpath(os.path.join(base_dir, net_val))
+        return abs_net_path
+    return None
 
 class Tshub3DEnvironment(BaseSumoEnvironment3D):
     def __init__(
@@ -65,6 +111,36 @@ class Tshub3DEnvironment(BaseSumoEnvironment3D):
         self.is_render = is_render
         self.is_every_frame = is_every_frame
 
+        # --- 1. 读取离线生成的紧急事件文件 ---
+        self.event_logic_manager = None
+        if EventManager is not None and sumo_cfg:
+            # 找到当前 sumocfg 文件内部加载的 rou.xml，读取经过合并的紧急事件
+            sumocfg_dir = os.path.dirname(os.path.abspath(sumo_cfg))
+            route_val = None
+            try:
+                tree = ET.parse(sumo_cfg)
+                root = tree.getroot()
+                route_file_node = root.find(".//route-files")
+                if route_file_node is not None:
+                    route_val = route_file_node.get("value").split(',')[0]
+            except Exception as e:
+                logger.warning(f"SIM: Failed to parse sumocfg for route-files: {e}")
+
+            if route_val:
+                route_xml_path = os.path.normpath(os.path.join(sumocfg_dir, route_val))
+                if os.path.exists(route_xml_path):
+                    self.event_logic_manager = EventManager()
+                    self.event_logic_manager.load_events_from_xml(route_xml_path)
+                    
+                    # 检查是否成功加载了事件
+                    if len(self.event_logic_manager.active_events) > 0:
+                        base_dir = os.path.abspath(os.path.join(current_dir, "../../../"))
+                        for e in self.event_logic_manager.active_events:
+                            e['model_path'] = os.path.normpath(os.path.join(base_dir, e['model_path']))
+                        logger.info(f"SIM: Successfully loaded {len(self.event_logic_manager.active_events)} offline events from: {route_xml_path}")
+                else:
+                    logger.info(f"SIM: Route file not found at {route_xml_path}")
+
         # 初始化 tshub 环境与 sumo 交互
         self.tshub_env = TshubEnvironment(
             sumo_cfg, 
@@ -100,8 +176,16 @@ class Tshub3DEnvironment(BaseSumoEnvironment3D):
                 render_mode=render_mode,
                 vehicle_model=vehicle_model,
             )
+            
+            # --- 2. 初始化视觉层上的 3D 紧急事件管理器 ---
+            from .vis3d_renderer.emergency.emergency_manager import EmergencyManager3D
+            self.emergency_renderer = EmergencyManager3D(
+                self.tshub_render._showbase_instance,
+                self.tshub_render._root_np
+            )
         else:
             self.tshub_render = None
+            self.emergency_renderer = None
             logger.info("SIM: 3D Rendering is DISABLED. Only Physics Simulation will run.")
         
     def reset(self):
@@ -240,8 +324,16 @@ class Tshub3DEnvironment(BaseSumoEnvironment3D):
                 if tls_id in states['tls'] and states['tls'][tls_id]['can_perform_action']:
                     can_perform_action = True
                     break
-            
+        # --- 动态渲染紧急事件 (在底层自身完成) ---
         if self.is_render and self.tshub_render and can_perform_action:
+           
+            # 委托给专门的 3D Event 模块进行处理
+            if getattr(self, 'event_logic_manager', None) is not None and getattr(self, 'emergency_renderer', None) is not None:
+                current_time = self.tshub_env.sim_step
+                active_events = self.event_logic_manager.get_active_events(current_time)
+                self.emergency_renderer.update(active_events)
+            # ----------------------------------------------------
+
             sensor_data = self.tshub_render.step(states, should_count_vehicles=self.should_count_vehicles)
             # --- 新增功能：计算BEV视角下各个进口道的车道车辆数 ---
             sensor_data['bev_lane_vehicle_counts'] = self._calculate_bev_lane_vehicle_counts(states)
