@@ -1,3 +1,10 @@
+'''
+Author: yufei Ji
+Date: 2026-03-22 22:15:57
+LastEditTime: 2026-03-24 20:20:53
+Description: this script is used to 
+FilePath: /VLMTraffic/TransSimHub/tshub/tshub_env3d/vis3d_renderer/emergency/emergency_manager.py
+'''
 from .emergency_element import Emergency3DElement
 
 class EmergencyManager3D:
