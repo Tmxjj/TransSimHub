@@ -4,7 +4,7 @@
 @Description: TSHub 渲染 3D 的场景, 这里所有物体都是只添加在场景中, 不添加在 BulletWorld, 不进行碰撞检测
     -> TSHubRenderer 主要由以下的组成:
         -> rendering_components, 
-LastEditTime: 2025-07-28 21:14:29
+LastEditTime: 2026-03-24 11:34:37
 '''
 import math
 from loguru import logger
@@ -20,6 +20,11 @@ from ..vis3d_renderer.base_render import BaseRender, DEBUG_MODE
 
 from ...utils.get_abs_path import get_abs_path
 from panda3d.core import loadPrcFileData
+
+# 增加以下这几行 PRC 配置：
+loadPrcFileData("", "shadow-depth-bits 24")    # 使用 24 bit 高精度阴影深度缓冲
+loadPrcFileData("", "gl-version 3 2")          # 确保使用现代 OpenGL 以支持高质量 Shader
+loadPrcFileData("", "hardware-point-sprites #t")
 
 
 # 场景渲染步骤

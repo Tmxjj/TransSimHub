@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2024-07-03 23:43:42
 @Description: 继承 ShowBase, Panda3D 的主界面
-LastEditTime: 2026-03-16 11:31:43
+LastEditTime: 2026-03-23 17:21:13
 '''
 from ...utils.get_abs_path import get_abs_path
 current_file_path = get_abs_path(__file__)
@@ -50,7 +50,10 @@ class _ShowBaseInstance(ShowBase):
             "gl-version": "3 3",        # 🔴【非常重要！】强制开启现代 OpenGL 3.3 核心模式，原生支持 HDR
             
             "sync-video": "false",
-            "model-cache-compressed-textures": "1",
+            "model-cache-compressed-textures": "0",  # 原本为 "1"，关掉它可以避免显卡的强制有损压缩破坏模型原有质感
+            "texture-anisotropic-degree": "16", # 🔥 开启 16 倍各向异性过滤，极大提升倾斜视角的纹理清晰度
+            "16-bit-textures": "0",             # 禁用 16 位纹理压缩，保留 32 位全彩质感
+            "dump-generated-shaders": "0",      
             "audio-library-name": "null", # 保持静音
             "print-pipe-types": "false"
         }
@@ -86,10 +89,12 @@ class _ShowBaseInstance(ShowBase):
             elif _ShowBaseInstance._render_mode == "onscreen":
                 super().__init__() # 开启可视化界面
             pipeline = simplepbr.init(
-                msaa_samples=4, # 将 PBR 原本极高的 16 倍抗锯齿设为4（极致性能），BEV不需要极高抗锯齿
+                msaa_samples=16, # 改为 16 (通用最高标准支持)
                 use_hardware_skinning=True,
                 use_normal_maps=True,
-                use_330=True,   # 开启 OpenGL 3.3 核心模式，避免过时的 OpenGL 2.1
+                use_occlusion_maps=True, # 🔥 开启光照遮蔽贴图（AO贴图），让车身缝隙和底盘拥有真实的接触阴影！
+                use_emission_maps=True,  # 🔥 开启自发光（可能车灯会亮）
+                use_330=True,   # 开启 OpenGL 3.3 核心模式
                 enable_shadows=True,
             ) # https://github.com/Moguri/panda3d-simplepbr
 
