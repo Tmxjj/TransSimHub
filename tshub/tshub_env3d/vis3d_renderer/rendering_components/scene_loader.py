@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2024-07-12 21:38:26
 @Description: 场景加载相关的方法 (用于初始化场景)
-LastEditTime: 2026-02-24 22:49:34
+LastEditTime: 2026-03-24 11:46:35
 '''
 from ....utils.get_abs_path import get_abs_path
 current_file_path = get_abs_path(__file__)
@@ -318,10 +318,10 @@ class SceneLoader(object):
             directional_light.set_color_temperature(light_temperature)
 
         # 启用阴影贴图并设置覆盖范围 （注释即可关闭投影）
-        # directional_light.setShadowCaster(True, 2048, 2048) # 分辨率
-        # lens = directional_light.getLens() 
-        # lens.setFilmSize(self.map_radius * 2, self.map_radius * 2) # 覆盖范围
-        # lens.setNearFar(10, self.map_radius * 3) # 深度范围
+        directional_light.setShadowCaster(True, 8192, 8192) # 分辨率
+        lens = directional_light.getLens() 
+        lens.setFilmSize(self.map_radius * 2, self.map_radius * 2) # 覆盖范围
+        lens.setNearFar(10, self.map_radius * 3) # 深度范围
 
         
         directional_light_node_path = self._root_np.attachNewNode(directional_light)
