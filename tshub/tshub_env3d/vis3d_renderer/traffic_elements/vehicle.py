@@ -108,8 +108,16 @@ class Vehicle3DElement(BaseElement):
             VEHICLE_MODELS = ['a', 'b', 'c', 'd', 'e', 'f']
             MODEL_WEIGHTS = [6/30, 6/30, 6/30,  2/30, 6/30,4/30]
             
-            selected_model = random.choices(VEHICLE_MODELS, weights=MODEL_WEIGHTS, k=1)[0]
-            logger.info(f"随机选择 {selected_model} 作为背景车辆模型")
+            # 使用固定种子生成一个可复现的随机选择，将车辆 id 编码进种子确保车辆类型在整个仿真周期保持一致
+            # 为了避免所有车辆变成同一模型，我们可以把 element_id 加入到 hash 运算作为种子
+            try:
+                seed_val = 42 + hash(self.element_id) % 10000
+            except:
+                seed_val = 42
+                
+            local_random = random.Random(seed_val)
+            selected_model = local_random.choices(VEHICLE_MODELS, weights=MODEL_WEIGHTS, k=1)[0]
+            logger.info(f"固定种子({seed_val})选择 {selected_model} 作为背景车辆模型")
             self.veh_model_name = f"background/{selected_model}.glb"
 
         return Vehicle3DElement.current_file_path(
