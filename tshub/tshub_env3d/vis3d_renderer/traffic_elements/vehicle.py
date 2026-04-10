@@ -5,6 +5,7 @@
 LastEditTime: 2026-01-10 17:08:23
 '''
 import random
+import hashlib
 from loguru import logger
 from typing import Tuple
 
@@ -109,9 +110,11 @@ class Vehicle3DElement(BaseElement):
             MODEL_WEIGHTS = [6/30, 6/30, 6/30,  2/30, 6/30,4/30]
             
             # 使用固定种子生成一个可复现的随机选择，将车辆 id 编码进种子确保车辆类型在整个仿真周期保持一致
-            # 为了避免所有车辆变成同一模型，我们可以把 element_id 加入到 hash 运算作为种子
+            # 注意：Python 内置 hash() 受 PYTHONHASHSEED 影响，跨进程结果不同，不能用于固定种子
+            # 改用 hashlib.md5 保证跨进程、跨次运行的确定性
             try:
-                seed_val = 42 + hash(self.element_id) % 10000
+                hash_bytes = hashlib.md5(str(self.element_id).encode('utf-8')).hexdigest()
+                seed_val = 42 + int(hash_bytes, 16) % 10000
             except:
                 seed_val = 42
                 
