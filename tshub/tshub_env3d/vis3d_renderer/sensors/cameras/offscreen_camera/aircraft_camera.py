@@ -34,7 +34,7 @@ class OffscreenAircraftCamera(_BaseOffCameraMixin, BaseOffscreenCamera):
         # 俯视的角度
         self.camera_np.setPos(pos[0], pos[1], pos[2])
         self.camera_np.lookAt(pos[0], pos[1], 2) # 查看 UAV/UAM 正下方
-        # self.camera_np.setH(heading) # 航向角
+        self.camera_np.setH(heading) # 航向角：控制 BEV 图像的朝向旋转
 
     @property
     def position(self) -> Tuple[float, float, float]:

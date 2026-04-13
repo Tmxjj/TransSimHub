@@ -76,7 +76,8 @@ def make_map_glb(
 
     # 对每个交叉口组进行几何合并
     for j_id, items in junction_groups.items():
-        polys_to_merge = [p for p, m in items]
+        # 通过 buffer(0) 修复可能存在的自相交等多边形拓扑错误
+        polys_to_merge = [p.buffer(0) for p, m in items]
         
         # 合并多边形
         merged_geom = unary_union(polys_to_merge)

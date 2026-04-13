@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2024-07-12 21:38:26
 @Description: 场景加载相关的方法 (用于初始化场景)
-LastEditTime: 2026-03-24 11:46:35
+LastEditTime: 2026-04-12 19:43:58
 '''
 from ....utils.get_abs_path import get_abs_path
 current_file_path = get_abs_path(__file__)
@@ -68,8 +68,12 @@ class SceneLoader(object):
 
         self.load_map()
         # --- 分别加载白色边缘线和黄色中央线 ---
-        self.load_road_lines_white()
-        self.load_road_lines_yellow()
+        wo_middle_path = self.scenario_glb_dir / SceneLoader.ROAD_FILENAME
+        if wo_middle_path.exists():
+            self.load_road_lines_white(filename=SceneLoader.ROAD_FILENAME)
+            self.load_road_lines_yellow()
+        else:
+            self.load_road_lines_white(filename="road_lines.glb")
 
         self.load_lane_lines()
         self.load_turn_marking()
@@ -115,9 +119,9 @@ class SceneLoader(object):
         return map_np
 
 
-    def load_road_lines_white(self):
+    def load_road_lines_white(self, filename="road_lines_wo_middle.glb"):
         """加载道路边界线 (通常为实线，白色)"""
-        road_lines_path = self.scenario_glb_dir / SceneLoader.ROAD_FILENAME
+        road_lines_path = self.scenario_glb_dir / filename
         logger.info(f"SIM: 加载道路边界线(白), {road_lines_path}.")
         if road_lines_path.exists():
             # 修改点2：节点名设为 road_edge

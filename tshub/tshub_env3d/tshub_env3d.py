@@ -164,6 +164,21 @@ class Tshub3DEnvironment(BaseSumoEnvironment3D):
                 .get('height', 80.0)
         except Exception:
             pass
+        # 记录 BEV 相机朝向配置（如未配置则默认 [0,1,0] 即正北朝上）
+        # 通过 SENSOR_CFG 中 aircraft.camera_heading 可按场景自定义旋转角度：
+        #   [0,1,0]  → heading=0°  → 正北朝上（默认）
+        #   [-1,1,0] → heading=45° → 顺时针旋转 45°（适用于道路走向 NE/NW/SE/SW 的场景）
+        # 注意：sensor_config 经 tsc_env.py 转换后结构为 {'aircraft': {'aircraft_J2': {...}}}，
+        #       因此必须用 .get(f'aircraft_{tls_ids[0]}', {}) 定位到具体路口的配置项。
+        self.aircraft_camera_heading = [0.0, 1.0, 0.0]
+        try:
+            heading_cfg = sensor_config.get('aircraft', {}) \
+                .get(f'aircraft_{tls_ids[0]}', {}) \
+                .get('camera_heading', None)
+            if heading_cfg is not None:
+                self.aircraft_camera_heading = [float(v) for v in heading_cfg]
+        except Exception:
+            pass
 
         # 初始化渲染器, 将场景渲染为 3D
         if self.is_render:
@@ -304,7 +319,7 @@ class Tshub3DEnvironment(BaseSumoEnvironment3D):
                         states.setdefault('aircraft', {})
                         states['aircraft'][f'aircraft_{tls_id}'] = {
                             'position': [center[0], center[1], bev_height],
-                            'heading': [0.0, 1.0, 0.0],
+                            'heading': self.aircraft_camera_heading,
                         }
         except Exception as e:
             logger.warning(f"SIM: Inject aircraft for BEV camera failed: {e}")
