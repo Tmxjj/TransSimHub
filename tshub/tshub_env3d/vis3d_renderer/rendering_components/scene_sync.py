@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2024-07-13 20:53:01
 @Description: 场景的同步, 根据 SUMO 的信息更新 panda3d
-LastEditTime: 2026-04-17 22:44:45
+LastEditTime: 2026-04-18 21:39:50
 '''
 import math
 from loguru import logger

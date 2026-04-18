@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2024-07-12 21:38:26
 @Description: 场景加载相关的方法 (用于初始化场景)
-LastEditTime: 2026-04-18 18:19:41
+LastEditTime: 2026-04-18 21:37:44
 '''
 from ....utils.get_abs_path import get_abs_path
 current_file_path = get_abs_path(__file__)
@@ -318,8 +318,8 @@ class SceneLoader(object):
             # 因此要让上面 setColor 的数值真正生效, 必须保持 None.
             light_temperature: int = None,
             ambient_temperature: int = None,
-            light_height: int = 300,       # (历史参数, 当前未使用; 光源 Z 由 light_direction 决定)
-            light_direction: Vec3 = None   # 可选光照方向
+            light_height: int = 100,       # (历史参数, 当前未使用; 光源 Z 由 light_direction 决定)
+            light_direction: Vec3 = Vec3(-1, -1, -0.5)   # 可选光照方向
         ) -> None:
         """设置光照
         """
@@ -360,8 +360,6 @@ class SceneLoader(object):
         directional_light_node_path = self._root_np.attachNewNode(directional_light)
 
         # 设置光源位置
-        if light_direction is None:
-            light_direction = Vec3(-1, -1, -0.5)
         light_direction.normalize()
 
          # 计算光源位置（确保所有运算在 Vec3 上进行）
