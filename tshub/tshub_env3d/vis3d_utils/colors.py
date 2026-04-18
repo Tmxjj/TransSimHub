@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2024-07-05 22:18:36
 @Description: 3D 渲染过程中需要使用的颜色
-LastEditTime: 2026-02-24 22:36:57
+LastEditTime: 2026-04-18 19:50:52
 '''
 from enum import Enum
 
@@ -40,6 +40,8 @@ class Colors(Enum):
 
     OffWhite = (200 / 255, 200 / 255, 200 / 255, 1)
     White = (1, 1, 1, 1)
+    # 【新增】一种偏暖的干土地颜色，亮度适中，避免过曝
+    DryEarth = (135 / 255, 130 / 255, 115 / 255, 1)
 
 
 
@@ -52,7 +54,7 @@ class SceneColors(Enum):
     SocialAgent = Colors.Blue.value
     SocialVehicle = Colors.Silver.value
 
-    Road = Colors.DarkGrey.value
+    Road = Colors.Asphalt.value
     EgoWaypoint = Colors.CyanTransparent.value
     EgoDrivenPath = Colors.CyanTransparent.value
     BubbleLine = Colors.LightGreyTransparent.value
@@ -60,9 +62,34 @@ class SceneColors(Enum):
     LaneDivider = Colors.OffWhite.value
     EdgeDivider = Colors.White.value
     MedialDivider = Colors.Yellow.value
-    Ground = Colors.Asphalt.value
+    Ground = Colors.OffWhite.value
 
     SignalUnknown = Colors.Grey.value
     SignalStop = Colors.Maroon.value
     SignalCaution = Colors.Yellow.value
     SignalGo = Colors.Green.value
+
+
+
+def srgb_to_linear(srgb_color):
+    """将 sRGB 空间颜色转换为 linear 空间 (供 PBR 着色器使用).
+
+    Why:
+    - SceneColors 中的数值以 sRGB 空间定义 (设计师期望在显示器上看到的显示值).
+    - 启用 `framebuffer-srgb 1` 的 PBR 流水线要求 shader 输出为 linear 空间,
+      OpenGL 在写入 framebuffer 时自动做 linear→sRGB 转换.
+    - 若把 sRGB 数值直接当作 baseColor / vertex color 喂给 shader, 相当于
+      把 linear 值再 sRGB 编码一次, 最终屏幕上的颜色会显著偏亮/偏灰, 脱离设计意图.
+    - 因此在作为 baseColor / setColor 输入前, 必须先从 sRGB 逆回到 linear.
+
+    How to apply:
+    - 对主光照受体 (road / ground / 车辆 baseColor factor) 均可调用此函数.
+    - 对走 `setLightOff(1)` 的线条 (车道线/边界线等), 不经过光照计算,
+      一般保持 sRGB 值即可, 不必转换.
+    """
+    def _conv(c: float) -> float:
+        if c <= 0.04045:
+            return c / 12.92
+        return ((c + 0.055) / 1.055) ** 2.4
+    r, g, b, a = srgb_color
+    return (_conv(r), _conv(g), _conv(b), a)

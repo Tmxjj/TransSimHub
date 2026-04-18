@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2024-07-08 22:21:18
 @Description: 3D 场景内的车辆
-LastEditTime: 2026-01-10 17:08:23
+LastEditTime: 2026-04-18 10:56:26
 '''
 import random
 import hashlib
@@ -59,9 +59,10 @@ class Vehicle3DElement(BaseElement):
 
         pose = self.get_element_pose_from_bumper() # 车辆坐标转换
         pos, heading = pose.as_panda3d() # 转换为位置和角度
+        pos[2] += 0.05 # 将车辆抬高到正确的高度，避免穿地面
         self.veh_node_path.setPosHpr(*pos, heading, 0, 0)
         self.veh_node_path.hide(CamMask.AllOn) # 首先不让所有相机看到
-        self.veh_node_path.show(CamMask.VehMask) # 接着只让部分相机可以看到
+        self.veh_node_path.show(CamMask.VehMask) 
         
         return True
 

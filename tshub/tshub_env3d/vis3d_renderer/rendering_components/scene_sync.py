@@ -2,11 +2,13 @@
 @Author: WANG Maonan
 @Date: 2024-07-13 20:53:01
 @Description: 场景的同步, 根据 SUMO 的信息更新 panda3d
-LastEditTime: 2026-03-24 11:45:24
+LastEditTime: 2026-04-17 22:44:45
 '''
 import math
 from loguru import logger
 from typing import Dict, List
+
+from panda3d.core import Material, Vec4
 
 from ..traffic_elements.vehicle import Vehicle3DElement
 from ..traffic_elements.traffic_signals import TLS3DElement
@@ -57,6 +59,7 @@ class SceneSync(object):
             '720P': (1280, 720),  # 1280x720（HD 标清）
             '1080P': (1920, 1080), # 1920x1080（Full HD）
             'SQUARE_512': (512, 512), # 自定义 1:1 长宽比
+            'SQUARE_720': (720, 720), # 自定义 1:1 长宽比
             'SQUARE_1024': (1024, 1024), # 自定义 1:1 长宽比
             'SQUARE_2048': (2048, 2048), # 自定义 1:1 长宽比
             'SQUARE_4096': (4096, 4096) # 自定义 1:1 长宽比 
@@ -74,6 +77,14 @@ class SceneSync(object):
         self._vehicle_elements = {} # 加入渲染的车辆
         self._tls_elements = {} # 加入信号灯 (每一个 in road 会有一个), 这里信号灯没有实体, 只有 sensor
         self._aircraft_elements = {} # 目前 aircraft 没有实体, 只有摄像头
+
+        # 共享的车辆 PBR 材质 —— 让车漆拥有金属反射质感, 同时保证会向路面投射阴影
+        # simplepbr 只读 baseColor / metallic / roughness, 不读 legacy 的 specular / shininess
+        # baseColor 设为白色, 让 GLB 自带的 texture 透出车身颜色
+        self._vehicle_material = Material("vehicle_material")
+        self._vehicle_material.setBaseColor(Vec4(1.0, 1.0, 1.0, 1.0))  # 不染色, 保留 GLB 贴图颜色
+        self._vehicle_material.setMetallic(0.5)   # 车漆半金属感
+        self._vehicle_material.setRoughness(0.25) # 中低粗糙度, 有明显高光但不至于像镜子
 
     @staticmethod
     def validate_sensor_config(sensor_config: Dict[str, List[str]]) -> bool:
@@ -197,6 +208,23 @@ class SceneSync(object):
             )
             element.create_node()
             element.begin_rendering_node()
+            # 应用共享的高光材质, 让车漆有镜面反射, 并确保被定向光正常照亮 -> 产生投射阴影
+            # priority=1 覆盖 GLB 自带材质 (很多车模带有无金属感的哑光材质)
+            if element.veh_node_path is not None:
+                
+                # 1. 强行清除 GLB 模型自带的 Shader，强迫其继承 _root_np 的 simplepbr Shader
+                element.veh_node_path.clearShader() 
+                for child in element.veh_node_path.findAllMatches("**"):
+                    child.clearShader()
+                from ...vis3d_utils.masks import CamMask  # 确保文件顶部引入了 CamMask
+                # 2. 确保阴影相机能看见车辆 (投射方):
+                element.veh_node_path.hide(CamMask.AllOn)
+                element.veh_node_path.show(CamMask.VehMask)
+                
+                # 3. 确保车辆向深度缓冲区写入数据（投射阴影的前提）
+                element.veh_node_path.set_depth_write(True)
+                element.veh_node_path.setMaterial(self._vehicle_material, 1)
+                
             # 只有特定的车辆才需要挂载传感器
             if veh_id in self.sensor_config.get('vehicle', {}):
                 sensor_types = self.sensor_config['vehicle'][veh_id].get('sensor_types', []) # 车辆需要安装的传感器

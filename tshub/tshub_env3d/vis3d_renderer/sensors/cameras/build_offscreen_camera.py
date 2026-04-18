@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2024-07-15 11:53:11
 @Description: 创建不同类型的 Offscreen Camera Type
-LastEditTime: 2025-03-25 19:51:54
+LastEditTime: 2026-04-18 19:27:34
 '''
 from panda3d.core import (
     FrameBufferProperties,
@@ -67,7 +67,7 @@ def build_offscreen_camera(
     buffer = showbase_instance.win.engine.makeOutput(
         showbase_instance.pipe,
         "{}-buffer".format(name),
-        -100,
+        1,
         fb_props,
         win_props,
         GraphicsPipe.BFRefuseWindow,
@@ -87,8 +87,16 @@ def build_offscreen_camera(
     # setup camera
     lens = PerspectiveLens() # 人眼的视角, 有 3D 效果
     # lens = OrthographicLens() # 这一类的 camera 没有 3D 的效果
-    lens.setFov(90)  # Set the field of view to 45 degrees, or another value as needed
-    lens.setFilmSize(width * resolution, height * resolution)
+    # 先设置 resolution=1 时的基准胶片尺寸，再用 setFov(90) 反算出固定焦距；
+    # 之后用 resolution 缩放胶片尺寸 + 固定焦距，使 resolution 真正控制视野范围：
+    #   resolution < 1 → 胶片缩小 → FOV 变窄 → Zoom In（放大）
+    #   resolution > 1 → 胶片增大 → FOV 变宽 → Zoom Out（缩小）
+    #   resolution = 1 → FOV = 90°（与原先行为一致）
+    lens.setFilmSize(width, height)  # 基准胶片尺寸（resolution=1）
+    lens.setFov(90)  # 基于基准胶片计算焦距: focal_length = width / (2 × tan(45°))
+    base_focal_length = lens.getFocalLength()  # 取出固定焦距
+    lens.setFilmSize(width * resolution, height * resolution)  # 用 resolution 缩放胶片
+    lens.setFocalLength(base_focal_length)  # 锁定焦距，让胶片大小决定实际 FOV
 
     camera_np = showbase_instance.makeCamera(
         buffer, camName=name, 

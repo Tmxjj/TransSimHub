@@ -2,11 +2,12 @@
 @Author: WANG Maonan
 @Date: 2024-07-03 23:43:42
 @Description: 继承 ShowBase, Panda3D 的主界面
-LastEditTime: 2026-03-23 17:21:13
+LastEditTime: 2026-04-17 18:01:31
 '''
 from ...utils.get_abs_path import get_abs_path
 current_file_path = get_abs_path(__file__)
 
+import os
 import simplepbr
 from loguru import logger
 from threading import Lock
@@ -41,7 +42,7 @@ class _ShowBaseInstance(ShowBase):
             "window-type": "offscreen", # ✅ 告诉引擎我们不需要看实体窗口
             
              # 这是标准 good practice，VirtualGL 完全支持
-            "framebuffer-srgb": "1",    # 【关键修复】：强制离屏缓冲区支持 sRGB
+            "framebuffer-srgb": "0",    # 【关键修复】：强制离屏缓冲区支持 sRGB
             "double-buffer": "1",       # 必须启用
             "depth-bits": "24",         # 高质量深度
             "color-bits": "32",         # RGBA8
@@ -82,31 +83,21 @@ class _ShowBaseInstance(ShowBase):
         """Initializer for the purposes of maintaining a singleton of this class.
         """
         self._render_lock = Lock()
+        # simplepbr 必须挂在每个 sim_root_np 上 —— offscreen camera 使用 scene=root_np
+        # 渲染时, 状态累积从 root_np 开始, 不会回溯 base.render 的 shader state
+        # 因此在 setup_sim_root 里延迟调用 simplepbr.init(render_node=root_np)
+        self._pbr_pipeline = None
         try:
             # There can be only 1 ShowBase instance at a time.
             if _ShowBaseInstance._render_mode == "offscreen":
                 super().__init__(windowType="offscreen") # 此时是没有界面的
             elif _ShowBaseInstance._render_mode == "onscreen":
                 super().__init__() # 开启可视化界面
-            pipeline = simplepbr.init(
-                msaa_samples=16, # 改为 16 (通用最高标准支持)
-                use_hardware_skinning=True,
-                use_normal_maps=True,
-                use_occlusion_maps=True, # 🔥 开启光照遮蔽贴图（AO贴图），让车身缝隙和底盘拥有真实的接触阴影！
-                use_emission_maps=True,  # 🔥 开启自发光（可能车灯会亮）
-                use_330=True,   # 开启 OpenGL 3.3 核心模式
-                enable_shadows=True,
-            ) # https://github.com/Moguri/panda3d-simplepbr
-
-            if hasattr(pipeline, 'use_tonemap'):
-                pipeline.use_tonemap = False
-            if hasattr(pipeline, 'use_srgb'):
-                pipeline.use_srgb = False
 
             self.setBackgroundColor(255, 255, 255, 1) # 设置背景颜色, (0,0,0) 是黑色
             self.setFrameRateMeter(True) # 是否显示 FPS
             logger.info("SIM: 初始化 ShowBase 实例")
-            
+
         except Exception as e:
             raise e
         
@@ -165,7 +156,9 @@ class _ShowBaseInstance(ShowBase):
         # 根节点放在 render 上面
         with self._render_lock:
             root_np.reparentTo(self.render)
-                    
+
+
+
         # unlit_shader = Shader.load(
         #     Shader.SL_GLSL,
         #     vertex=current_file_path("../_assets_3d/shader/unlit_shader.vert"),

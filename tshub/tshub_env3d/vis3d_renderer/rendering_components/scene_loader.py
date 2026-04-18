@@ -2,11 +2,12 @@
 @Author: WANG Maonan
 @Date: 2024-07-12 21:38:26
 @Description: 场景加载相关的方法 (用于初始化场景)
-LastEditTime: 2026-04-12 19:43:58
+LastEditTime: 2026-04-18 18:19:41
 '''
 from ....utils.get_abs_path import get_abs_path
 current_file_path = get_abs_path(__file__)
-
+import os
+import simplepbr
 from pathlib import Path
 from loguru import logger
 from panda3d.core import (
@@ -23,13 +24,14 @@ from panda3d.core import (
     GeomVertexWriter,
     AmbientLight,
     CardMaker,
+    Material,
     Vec3,
     Vec4,
     DirectionalLight,
     loadPrcFileData
 )
 from ...vis3d_utils.masks import CamMask
-from ...vis3d_utils.colors import SceneColors, Colors
+from ...vis3d_utils.colors import SceneColors, Colors, srgb_to_linear
 
 class SceneLoader(object):
     ROAD_MAP_NODE_NAME = "road_map"
@@ -92,16 +94,32 @@ class SceneLoader(object):
             map_np = self._showbase_instance.loader.loadModel(map_path, noCache=True)
             node_path = self._root_np.attachNewNode(self.ROAD_MAP_NODE_NAME)
             map_np.reparent_to(node_path)
-            node_path.setDepthOffset(0)
+            # node_path.setDepthOffset(0)
             # 定义 mask
             node_path.hide(CamMask.AllOn)
             node_path.show(CamMask.MapMask) # 只给部分 camera 展示
-            # 设置路面的颜色
-            node_path.setColor(SceneColors.Road.value,1) # 修改调色 override=1 表示将原来的颜色完全覆盖
+            # 设置路面的颜色: 先把 sRGB 设计色转成 linear, 再喂给 PBR shader
+            # 搭配 framebuffer-srgb=1 在输出阶段自动 linear→sRGB, 最终显示回设计色 (0.314 DarkGrey)
+            node_path.setColor(srgb_to_linear(SceneColors.Road.value), 1)
 
             # 如果原来的路面有纹理，setColor 只会变成“染色”。如果你想完全替换成纯色，需要把纹理和材质关掉 （直接修改glb会更好）
             node_path.setTextureOff(1)  # 强制移除贴图
-            node_path.setMaterialOff(1) # 强制移除自带材质(防止反光/颜色干扰)
+            # 🔴 深层清理 shader: map.glb 是一整颗子树, 每个 GeomNode 自带 glTF shader,
+            #    只在顶层 node_path 上 clearShader 无法让内部 GeomNode 继承 root_np 的 simplepbr shader,
+            #    导致路面走的是不采样 shadow map 的 GLB 原生 shader → 车辆投影在路面上消失。
+            #    findAllMatches("**") 对子树所有节点都执行 clearShader, 强制整棵子树走 simplepbr.
+            node_path.clearShader()
+            for child in node_path.findAllMatches("**"):
+                child.clearShader()
+            node_path.setTransparency(False)  # 🔴 强制关闭透明度
+            node_path.set_depth_write(True)   # 🔴 必须为 True，否则接不住阴影
+            # 路面 PBR 材质 —— 非金属 + 中高粗糙度, 让阴影以漫反射亮度差清晰显现
+            road_material = Material("road_material")
+            road_material.setBaseColor(Vec4(1.0, 1.0, 1.0, 1.0)) # baseColor 留白, 由 setColor 染色
+            road_material.setMetallic(0.0)   # 柏油路非金属
+            road_material.setRoughness(0.85) # 粗糙度高, 漫反射为主, 无镜面高光
+            node_path.setMaterial(road_material, 1)
+
 
             map_bounds = map_np.getBounds()
             self.map_radius = map_bounds.getRadius()
@@ -136,7 +154,7 @@ class SceneLoader(object):
             
             # 设置边缘线颜色（白色）
             edge_lines_np.setColor(SceneColors.EdgeDivider.value)
-            edge_lines_np.setRenderModeThickness(3)
+            edge_lines_np.setRenderModeThickness(2)
             edge_lines_np.setLightOff(1)
             edge_lines_np.set_depth_write(False)
             logger.info(f"SIM: 加载道路边界线成功.")
@@ -161,7 +179,7 @@ class SceneLoader(object):
             # 设置中央线颜色（黄色）
             # 注意：请确保 SceneColors.MedialDivider.value 已被定义为亮黄色 (1, 1, 0, 1)
             middle_lines_np.setColor(SceneColors.MedialDivider.value)
-            middle_lines_np.setRenderModeThickness(3)
+            middle_lines_np.setRenderModeThickness(2)
             middle_lines_np.setLightOff(1)
             middle_lines_np.set_depth_write(False)
             logger.info(f"SIM: 加载中央分隔带成功.")
@@ -187,7 +205,7 @@ class SceneLoader(object):
             dashed_lines_np.show(CamMask.MapMask) # 只给部分 camera 展示
             # 设置车道线的颜色
             dashed_lines_np.setColor(SceneColors.LaneDivider.value)
-            dashed_lines_np.setRenderModeThickness(3)
+            dashed_lines_np.setRenderModeThickness(2)
             
             dashed_line_shader = Shader.load(
                 Shader.SL_GLSL,
@@ -288,25 +306,31 @@ class SceneLoader(object):
         return None
 
     def setup_lighting(
-            self, 
-            # ：提高环境光亮度 (0.9)，提高主光强度 (>1.0) 和暖色调
-            ambient_color: Vec4 = Vec4(0.9, 0.9, 0.9, 1), 
-            directional_color: Vec4 = Vec4(1.3, 1.25, 1.1, 1),  
-            light_temperature: int = None,  # 关闭色温以避免偏色
+            self,
+            # PBR + sRGB 工作流 (配合 `framebuffer-srgb 1`, shader 内以 linear 计算):
+            #   - 受光体 (road/ground) 已在 load_map/load_flat_terrain 做 sRGB→linear 转换;
+            #     这里光强按"1.0 ≈ 设计参考亮度"来标定, 使受光路面亮度回到设计期望的 sRGB 数值.
+            #   - ambient 略带冷色 (天光), directional 略带暖色 (阳光), 两者 ~3-5x 比例
+            #     保证阴影与受光区域有明显且自然的亮度差.
+            ambient_color: Vec4 = Vec4 (0.9, 0.92, 0.95, 1),      # 天光: 略偏冷
+            directional_color: Vec4 = Vec4(4.5, 4.2, 3.8, 1),  # 阳光: 略偏暖, 轻度 HDR
+            # 色温 API 会把 setColor 的数值整体替换为该色温下的满亮度颜色,
+            # 因此要让上面 setColor 的数值真正生效, 必须保持 None.
+            light_temperature: int = None,
             ambient_temperature: int = None,
-            light_height: int = 100,
-            light_direction: Vec3 = None  # 可选光照方向
+            light_height: int = 300,       # (历史参数, 当前未使用; 光源 Z 由 light_direction 决定)
+            light_direction: Vec3 = None   # 可选光照方向
         ) -> None:
         """设置光照
         """
         logger.info("SIM: 设置光照.")
-        
+
         # 确保 map_center 是 Vec3 类型
         if isinstance(self.map_center, tuple):
             map_center = Vec3(*self.map_center)  # 将 tuple 转换为 Vec3
         else:
             map_center = Vec3(self.map_center)  # 确保是 Vec3
-        
+
         # 环境光
         ambient_light = AmbientLight('ambientLight')
         ambient_light.setColor(ambient_color)
@@ -314,7 +338,7 @@ class SceneLoader(object):
             ambient_light.set_color_temperature(float(ambient_temperature))
         ambient_light_node_path = self._root_np.attachNewNode(ambient_light)
         self._root_np.setLight(ambient_light_node_path)
-        
+
         # 定向光
         directional_light = DirectionalLight('directionalLight')
         directional_light.setColor(directional_color)
@@ -322,28 +346,123 @@ class SceneLoader(object):
             directional_light.set_color_temperature(light_temperature)
 
         # 启用阴影贴图并设置覆盖范围 （注释即可关闭投影）
+        # Shadow map 覆盖范围受限于 map_radius*2，过大会让每像素覆盖面积过粗、车辆阴影糊成一团；
+        # 这里对大场景（如 NewYork radius~4447）做上限裁切，保证阴影清晰度。
+        # 每 texel 对应的世界尺寸 = shadow_film / 8192，经验上小于 0.6m/texel 时车辆阴影边缘仍可辨认。
+        SHADOW_FILM_MAX = 4096  # 上限 ~ 0.5m/texel @8192 分辨率
+        shadow_film = min(self.map_radius * 2, SHADOW_FILM_MAX)
         directional_light.setShadowCaster(True, 8192, 8192) # 分辨率
-        lens = directional_light.getLens() 
-        lens.setFilmSize(self.map_radius * 2, self.map_radius * 2) # 覆盖范围
-        lens.setNearFar(10, self.map_radius * 3) # 深度范围
+        lens = directional_light.getLens()
+        lens.setFilmSize(shadow_film, shadow_film) # 覆盖范围 (裁切后保证精度)
 
-        
+        # Panda3D 的 DirectionalLight 内置 shadow cam 默认 cameraMask = bit(31)
+        directional_light.setCameraMask(CamMask.VehMask)
         directional_light_node_path = self._root_np.attachNewNode(directional_light)
-        
+
         # 设置光源位置
         if light_direction is None:
-            light_direction = Vec3(-1, -1, -0.5) 
+            light_direction = Vec3(-1, -1, -0.5)
         light_direction.normalize()
-        
-        # 计算光源位置（确保所有运算在 Vec3 上进行）
+
+         # 计算光源位置（确保所有运算在 Vec3 上进行）
         light_pos = map_center - light_direction * self.map_radius
         light_pos.z = light_height  # 设置高度
-        
+
         directional_light_node_path.setPos(light_pos)
         directional_light_node_path.lookAt(map_center)  # 朝向场景中心
-        
+        directional_light.setScene(self._root_np)
+        # nearFar 按 map_radius 动态计算，避免范围过大导致 shadow_bias 等效世界偏移过大。
+        # 光源在 light_height(300m) 处斜照场景，near 留足负值以捕获光源后方车辆，
+        # far 按 map_radius 上限裁切保证精度。
+        shadow_near = -max(self.map_radius * 0.6, 250)
+        shadow_far  =  max(self.map_radius * 1.8, 500)
+        lens.setNearFar(shadow_near, shadow_far)
         self._root_np.setLight(directional_light_node_path)
-        self._root_np.setShaderAuto() 
+
+        if self._showbase_instance._pbr_pipeline is None:
+            logger.info("SIM: 正在加载 simplepbr 着色器管线...")
+            # shadow_bias 目标：world_bias ∈ [0.2m, 1.0m]
+            #   world_bias = shadow_bias × (far - near)
+            #   range = shadow_far - shadow_near，随 map_radius 动态变化
+            #   shadow_bias = 0.3m / range，并 clamp 到 [0.00005, 0.001]
+            shadow_range = shadow_far - shadow_near
+            shadow_bias  = max(0.00005, min(0.001, 0.3 / shadow_range))
+            logger.info(
+                f"SIM: shadow nearFar=({shadow_near:.0f}, {shadow_far:.0f}), "
+                f"range={shadow_range:.0f}m, bias={shadow_bias:.6f} "
+                f"(world≈{shadow_bias * shadow_range:.2f}m)"
+            )
+            self._showbase_instance._pbr_pipeline = simplepbr.init(
+                render_node=self._root_np,
+                msaa_samples=16,
+                use_hardware_skinning=True,
+                use_normal_maps=True,
+                use_occlusion_maps=True,
+                use_emission_maps=True,
+                use_330=True,
+                enable_shadows=True,
+                shadow_bias=shadow_bias,
+                exposure=0.0,
+            )
+
+        # =============================================================
+        # 🔍 DEBUG: 可视化 shadow camera 的 orthographic 视锥
+        #   - showFrustum() 必须在 setPos / lookAt / setFilmSize / setNearFar
+        #     全部设好之后调用, 否则线框用的是旧参数.
+        #   - showFrustum 生成的子节点默认 into_mask = AllOn, 理论上对所有 camera 可见,
+        #     但某些 junction/BEV camera 的 cameraMask 不含 bit(31) 会导致线框缺失;
+        #     这里递归 show(AllOn) + setLightOff + setShaderOff + 加粗 + 醒目黄,
+        #     确保它一定出现在现有的 {jid}_front.png 里.
+        #   - 同时把 8 个世界角点打到日志, 数值/视觉双重核对.
+        #   - 调试完成后把下面这段整块注释即可.
+        # =============================================================
+        # directional_light.showFrustum()
+        # for child in directional_light_node_path.findAllMatches("**"):
+        #     child.show(CamMask.AllOn)
+        #     child.setLightOff(1)
+        #     child.setShaderOff(1)
+        #     child.setRenderModeThickness(4)
+        #     child.setColor(1.0, 0.85, 0.0, 1.0)
+        # Tag： map 全部在视锥内，没有任何一处露在外
+        # 2026-04-18T11:15:39.843113+0800 | INFO   | tshub.tshub_env3d.vis3d_renderer.rendering_components.scene_loader:_log_shadow_frustum:409 - SIM:  light pos (root) : LPoint3f(466.14294, 469.20507, 300)
+        # 2026-04-18T11:15:39.843176+0800 | INFO   | tshub.tshub_env3d.vis3d_renderer.rendering_components.scene_loader:_log_shadow_frustum:410 - SIM:  lookAt target    : LVector3f(264.22607, 267.2882, 0)
+        # 2026-04-18T11:15:39.843234+0800 | INFO   | tshub.tshub_env3d.vis3d_renderer.rendering_components.scene_loader:_log_shadow_frustum:411 - SIM:  map_radius       : 302.8752746582031
+        # 2026-04-18T11:15:39.843287+0800 | INFO   | tshub.tshub_env3d.vis3d_renderer.rendering_components.scene_loader:_log_shadow_frustum:412 - SIM:  filmSize (ortho) : 605.7505493164062 x 605.7505493164062
+        # 2026-04-18T11:15:39.843339+0800 | INFO   | tshub.tshub_env3d.vis3d_renderer.rendering_components.scene_loader:_log_shadow_frustum:413 - SIM:  nearFar          : (-500.0, 1000.0)  span = 1500.0
+        # # --- 数值核对: 算出 shadow 视锥的 8 个世界角点, 打到 log ---
+        # def _log_shadow_frustum():
+        #     hx = shadow_film / 2.0
+        #     hz = shadow_film / 2.0
+        #     near, far = -500.0, 1000.0
+        #     # Panda3D 约定: X 右, Y 前(远), Z 上
+        #     local_corners = [
+        #         (-hx, near, -hz), ( hx, near, -hz), ( hx, near,  hz), (-hx, near,  hz),
+        #         (-hx, far,  -hz), ( hx, far,  -hz), ( hx, far,   hz), (-hx, far,   hz),
+        #     ]
+        #     mat = directional_light_node_path.getMat(self._root_np)  # light local → root_np
+        #     world_corners = [mat.xformPoint(Vec3(*c)) for c in local_corners]
+        #     logger.info("=" * 60)
+        #     logger.info("SIM: SHADOW FRUSTUM DEBUG")
+        #     logger.info(f"SIM:  light pos (root) : {directional_light_node_path.getPos(self._root_np)}")
+        #     logger.info(f"SIM:  lookAt target    : {map_center}")
+        #     logger.info(f"SIM:  map_radius       : {self.map_radius}")
+        #     logger.info(f"SIM:  filmSize (ortho) : {shadow_film} x {shadow_film}")
+        #     logger.info(f"SIM:  nearFar          : ({near}, {far})  span = {far - near}")
+        #     logger.info("SIM:  near plane corners (world):")
+        #     for i, c in enumerate(world_corners[:4]):
+        #         logger.info(f"    near[{i}] = ({c.x:+.2f}, {c.y:+.2f}, {c.z:+.2f})")
+        #     logger.info("  far  plane corners (world):")
+        #     for i, c in enumerate(world_corners[4:]):
+        #         logger.info(f"    far [{i}] = ({c.x:+.2f}, {c.y:+.2f}, {c.z:+.2f})")
+        #     logger.info("=" * 60)
+        # try:
+        #     _log_shadow_frustum()
+        # except Exception as e:
+        #     logger.warning(f"SHADOW FRUSTUM DEBUG log failed: {e}")
+        # =============================================================
+
+        
+       
 
     def load_sky_box(self) -> None:
         """初始化环境的时候, 设置 skybox
@@ -399,7 +518,7 @@ class SceneLoader(object):
 
             # 定义 mask
             ground_np.hide(CamMask.AllOn)
-            ground_np.show(CamMask.GroundMask) # 只给部分 camera 展示
+            ground_np.show(CamMask.GroundMask)
             # 强制覆盖材质/纹理并着色，允许光照/阴影
             ground_np.setTextureOff(1) # 撕掉贴图（草地、水泥）
             # ground_np.setMaterialOff(1) # 撕掉材质，忽略GLB定义的粗糙或反光
@@ -407,8 +526,18 @@ class SceneLoader(object):
             # ground_np.setShaderOff(1) # 不参与自动着色/阴影
             # ground_np.setLightOff(1)  # 不受灯光影响，不接收/投射阴影
             ground_np.setTransparency(False)
-            ground_np.setColor(SceneColors.Ground.value, 1)  # 修改调色 override=1
-            
+            # 🔴 深层清理 shader: 同 load_map 的原因, 让 ground.glb 子树继承 simplepbr shader, 正确接收阴影
+            for child in ground_np.findAllMatches("**"):
+                child.clearShader()
+            # 保持原始设计色: SceneColors.Ground (sRGB 设计值)
+            # 同样做 sRGB→linear 转换, 保证 PBR 输出回到设计色
+            ground_np.setColor(srgb_to_linear(SceneColors.Ground.value), 1)
+            ground_material = Material("ground_material")
+            ground_material.setBaseColor(Vec4(1.0, 1.0, 1.0, 1.0))
+            ground_material.setMetallic(0.0)
+            ground_material.setRoughness(0.9) # 比路面更粗糙, 完全漫反射
+            ground_np.setMaterial(ground_material, 1)
+
             ground_np.set_bin('background', 1)
             ground_np.set_depth_test(True)   # 参与深度测试
             ground_np.set_depth_write(False) # 不写深度，避免遮挡 map
