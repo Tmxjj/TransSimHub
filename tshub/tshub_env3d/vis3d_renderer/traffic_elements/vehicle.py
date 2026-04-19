@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2024-07-08 22:21:18
 @Description: 3D 场景内的车辆
-LastEditTime: 2026-04-18 10:56:26
+LastEditTime: 2026-04-19 15:17:42
 '''
 import random
 import hashlib
@@ -107,7 +107,7 @@ class Vehicle3DElement(BaseElement):
             self.veh_model_name = MODEL_MAPPING[self.veh_type]
         else:
             # 处理普通背景车辆
-            VEHICLE_MODELS = ['a', 'b', 'c', 'd', 'e', 'f']
+            VEHICLE_MODELS = ['a', 'b', 'c', 'd', 'e', 'f'] # 蓝色、橙色、灰色、
             MODEL_WEIGHTS = [6/30, 6/30, 6/30,  2/30, 6/30,4/30]
             
             # 使用固定种子生成一个可复现的随机选择，将车辆 id 编码进种子确保车辆类型在整个仿真周期保持一致

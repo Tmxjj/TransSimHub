@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2024-07-12 21:38:26
 @Description: 场景加载相关的方法 (用于初始化场景)
-LastEditTime: 2026-04-18 21:37:44
+LastEditTime: 2026-04-19 15:06:05
 '''
 from ....utils.get_abs_path import get_abs_path
 current_file_path = get_abs_path(__file__)
@@ -155,7 +155,7 @@ class SceneLoader(object):
             # 设置边缘线颜色（白色）
             edge_lines_np.setColor(SceneColors.EdgeDivider.value)
             edge_lines_np.setRenderModeThickness(2)
-            edge_lines_np.setLightOff(1)
+            # edge_lines_np.setLightOff(1)
             edge_lines_np.set_depth_write(False)
             logger.info(f"SIM: 加载道路边界线成功.")
             return edge_lines_np
@@ -180,7 +180,7 @@ class SceneLoader(object):
             # 注意：请确保 SceneColors.MedialDivider.value 已被定义为亮黄色 (1, 1, 0, 1)
             middle_lines_np.setColor(SceneColors.MedialDivider.value)
             middle_lines_np.setRenderModeThickness(2)
-            middle_lines_np.setLightOff(1)
+            # middle_lines_np.setLightOff(1)
             middle_lines_np.set_depth_write(False)
             logger.info(f"SIM: 加载中央分隔带成功.")
             return middle_lines_np
@@ -216,7 +216,7 @@ class SceneLoader(object):
             dashed_lines_np.setShaderInput(
                 "iResolution", self._showbase_instance.getSize()
             )
-            dashed_lines_np.setLightOff(1)  # 车道线不参与光照/阴影
+            # dashed_lines_np.setLightOff(1)  # 车道线不参与光照/阴影
 
             # 关闭深度写入：防止产生阴影
             dashed_lines_np.set_depth_write(False)
@@ -402,62 +402,6 @@ class SceneLoader(object):
                 shadow_bias=shadow_bias,
                 exposure=0.0,
             )
-
-        # =============================================================
-        # 🔍 DEBUG: 可视化 shadow camera 的 orthographic 视锥
-        #   - showFrustum() 必须在 setPos / lookAt / setFilmSize / setNearFar
-        #     全部设好之后调用, 否则线框用的是旧参数.
-        #   - showFrustum 生成的子节点默认 into_mask = AllOn, 理论上对所有 camera 可见,
-        #     但某些 junction/BEV camera 的 cameraMask 不含 bit(31) 会导致线框缺失;
-        #     这里递归 show(AllOn) + setLightOff + setShaderOff + 加粗 + 醒目黄,
-        #     确保它一定出现在现有的 {jid}_front.png 里.
-        #   - 同时把 8 个世界角点打到日志, 数值/视觉双重核对.
-        #   - 调试完成后把下面这段整块注释即可.
-        # =============================================================
-        # directional_light.showFrustum()
-        # for child in directional_light_node_path.findAllMatches("**"):
-        #     child.show(CamMask.AllOn)
-        #     child.setLightOff(1)
-        #     child.setShaderOff(1)
-        #     child.setRenderModeThickness(4)
-        #     child.setColor(1.0, 0.85, 0.0, 1.0)
-        # Tag： map 全部在视锥内，没有任何一处露在外
-        # 2026-04-18T11:15:39.843113+0800 | INFO   | tshub.tshub_env3d.vis3d_renderer.rendering_components.scene_loader:_log_shadow_frustum:409 - SIM:  light pos (root) : LPoint3f(466.14294, 469.20507, 300)
-        # 2026-04-18T11:15:39.843176+0800 | INFO   | tshub.tshub_env3d.vis3d_renderer.rendering_components.scene_loader:_log_shadow_frustum:410 - SIM:  lookAt target    : LVector3f(264.22607, 267.2882, 0)
-        # 2026-04-18T11:15:39.843234+0800 | INFO   | tshub.tshub_env3d.vis3d_renderer.rendering_components.scene_loader:_log_shadow_frustum:411 - SIM:  map_radius       : 302.8752746582031
-        # 2026-04-18T11:15:39.843287+0800 | INFO   | tshub.tshub_env3d.vis3d_renderer.rendering_components.scene_loader:_log_shadow_frustum:412 - SIM:  filmSize (ortho) : 605.7505493164062 x 605.7505493164062
-        # 2026-04-18T11:15:39.843339+0800 | INFO   | tshub.tshub_env3d.vis3d_renderer.rendering_components.scene_loader:_log_shadow_frustum:413 - SIM:  nearFar          : (-500.0, 1000.0)  span = 1500.0
-        # # --- 数值核对: 算出 shadow 视锥的 8 个世界角点, 打到 log ---
-        # def _log_shadow_frustum():
-        #     hx = shadow_film / 2.0
-        #     hz = shadow_film / 2.0
-        #     near, far = -500.0, 1000.0
-        #     # Panda3D 约定: X 右, Y 前(远), Z 上
-        #     local_corners = [
-        #         (-hx, near, -hz), ( hx, near, -hz), ( hx, near,  hz), (-hx, near,  hz),
-        #         (-hx, far,  -hz), ( hx, far,  -hz), ( hx, far,   hz), (-hx, far,   hz),
-        #     ]
-        #     mat = directional_light_node_path.getMat(self._root_np)  # light local → root_np
-        #     world_corners = [mat.xformPoint(Vec3(*c)) for c in local_corners]
-        #     logger.info("=" * 60)
-        #     logger.info("SIM: SHADOW FRUSTUM DEBUG")
-        #     logger.info(f"SIM:  light pos (root) : {directional_light_node_path.getPos(self._root_np)}")
-        #     logger.info(f"SIM:  lookAt target    : {map_center}")
-        #     logger.info(f"SIM:  map_radius       : {self.map_radius}")
-        #     logger.info(f"SIM:  filmSize (ortho) : {shadow_film} x {shadow_film}")
-        #     logger.info(f"SIM:  nearFar          : ({near}, {far})  span = {far - near}")
-        #     logger.info("SIM:  near plane corners (world):")
-        #     for i, c in enumerate(world_corners[:4]):
-        #         logger.info(f"    near[{i}] = ({c.x:+.2f}, {c.y:+.2f}, {c.z:+.2f})")
-        #     logger.info("  far  plane corners (world):")
-        #     for i, c in enumerate(world_corners[4:]):
-        #         logger.info(f"    far [{i}] = ({c.x:+.2f}, {c.y:+.2f}, {c.z:+.2f})")
-        #     logger.info("=" * 60)
-        # try:
-        #     _log_shadow_frustum()
-        # except Exception as e:
-        #     logger.warning(f"SHADOW FRUSTUM DEBUG log failed: {e}")
-        # =============================================================
 
         
        

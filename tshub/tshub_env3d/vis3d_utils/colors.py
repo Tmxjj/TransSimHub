@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2024-07-05 22:18:36
 @Description: 3D 渲染过程中需要使用的颜色
-LastEditTime: 2026-04-18 19:50:52
+LastEditTime: 2026-04-19 14:58:22
 '''
 from enum import Enum
 
@@ -30,15 +30,16 @@ class Colors(Enum):
 
     DarkPurple = (50 / 255, 30 / 255, 50 / 255, 1)
     Purple = (127 / 255, 0, 127 / 255, 1)
-    WarmAsphalt = (145 / 255, 140 / 255, 135 / 255, 1) # 温暖的柏油路颜色
+    WarmAsphalt = (173 / 255, 171 / 255, 170 / 255, 1) # 温暖的柏油路颜色
     Asphalt = (140 / 255, 140 / 255, 140 / 255, 1) # 标准柏油路颜色
+    LightWarmAsphalt = (118 / 255, 117 / 255, 115 / 255, 1) # 更加浅色的柏油路颜色
 
     DarkGrey = (80 / 255, 80 / 255, 80 / 255, 1)
     Grey = (119 / 255, 136 / 255, 153 / 255, 1)
     LightGrey = (140 / 255, 140 / 255, 140 / 255,1)
     LightGreyTransparent = (221 / 255, 221 / 255, 221 / 255, 0.1)
 
-    OffWhite = (200 / 255, 200 / 255, 200 / 255, 1)
+    OffWhite = (210 / 255, 210 / 255, 210 / 255, 1)
     White = (1, 1, 1, 1)
     # 【新增】一种偏暖的干土地颜色，亮度适中，避免过曝
     DryEarth = (135 / 255, 130 / 255, 115 / 255, 1)
@@ -54,7 +55,7 @@ class SceneColors(Enum):
     SocialAgent = Colors.Blue.value
     SocialVehicle = Colors.Silver.value
 
-    Road = Colors.Asphalt.value
+    Road = Colors.WarmAsphalt.value
     EgoWaypoint = Colors.CyanTransparent.value
     EgoDrivenPath = Colors.CyanTransparent.value
     BubbleLine = Colors.LightGreyTransparent.value
