@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2024-07-08 22:21:18
 @Description: 3D 场景内的车辆
-LastEditTime: 2026-04-19 15:17:42
+LastEditTime: 2026-04-20 17:28:19
 '''
 import random
 import hashlib
@@ -88,19 +88,28 @@ class Vehicle3DElement(BaseElement):
             'emergency': "public_transport/emergency.glb", # 救护车
             'fire_engine': "public_transport/fire_engine.glb", # 消防车
             'taxi': "public_transport/taxi.glb",            # 出租车
+            'bus': "public_transport/bus.glb",              # 公交车
+            'school_bus': "public_transport/school_bus.glb", # 校车
             # 特殊事件
             'barrier_A': "event/barrier_A.glb",             # 路障 A
             'barrier_B': "event/barrier_B.glb",             # 路障 B
             'barrier_C': "event/barrier_C.glb",             # 路障 C
             'barrier_D': "event/barrier_D.glb",             # 路障 D
             'barrier_E': "event/barrier_E.glb",             # 路障 E
-            'tree_branch_1lane': "event/tree_branch_1lane.glb",  # 树枝 1 lane
-            'tree_branch_3lanes': "event/tree_branch_3lanes.glb",  # 树枝 3 lanes
-            'pedestrian': "event/pedestrian.glb",           # 倒地行人
-            'crash_vehicle_1lane': "event/crash_vehicle_1lane.glb", # 交通事故 (破损的车辆)
-            'crash_vehicle_3lanes': "event/crash_vehicle_3lanes.glb", # 交通事故 (破损的车辆, 3 lanes)
-            'other_accidents': "event/other_accidents.glb", # 其他事故
+            'tree_branch_1lane': "event/tree_branch_1lane.glb",   # 树枝 1 车道
+            'tree_branch_3lanes': "event/tree_branch_3lanes.glb", # 树枝 3 车道
+            'pedestrian_lying': "event/pedestrian.glb",     # 倒地行人（交通事故场景）
+            'crash_vehicle_a': "event/crash_vehicle_a.glb",     # 碰撞残骸车辆A
+            'crash_vehicle_lane2': "event/crash_vehicle_lane2.glb",     # 碰撞残骸车辆A（2 车道版本）
+            'crash_vehicle_b': "event/crash_vehicle_b.glb",     # 碰撞残骸车辆B（只占一个车道版本）
+            # 行人过街（实际模型目录为 pedestrain，存在拼写差异）
+            'pedestrian_crossing': "pedestrain/pedestrain_a.glb", # 行人过街
         }
+
+        # bus/school_bus 仅存在于 high_poly 目录，强制使用 high poly 路径
+        HIGH_POLY_ONLY = {'bus', 'school_bus', 'ego', 'taxi',
+                          'pedestrian_crossing', 'pedestrian_lying',
+                          'crash_vehicle_a', 'crash_vehicle_lane2','crash_vehicle_b'}
 
         # 优化查找：直接尝试从映射中获取模型路径
         if self.veh_type in MODEL_MAPPING:
@@ -109,7 +118,7 @@ class Vehicle3DElement(BaseElement):
             # 处理普通背景车辆
             VEHICLE_MODELS = ['a', 'b', 'c', 'd', 'e', 'f'] # 蓝色、橙色、灰色、
             MODEL_WEIGHTS = [6/30, 6/30, 6/30,  2/30, 6/30,4/30]
-            
+
             # 使用固定种子生成一个可复现的随机选择，将车辆 id 编码进种子确保车辆类型在整个仿真周期保持一致
             # 注意：Python 内置 hash() 受 PYTHONHASHSEED 影响，跨进程结果不同，不能用于固定种子
             # 改用 hashlib.md5 保证跨进程、跨次运行的确定性
@@ -118,14 +127,19 @@ class Vehicle3DElement(BaseElement):
                 seed_val = 42 + int(hash_bytes, 16) % 10000
             except:
                 seed_val = 42
-                
+
             local_random = random.Random(seed_val)
             selected_model = local_random.choices(VEHICLE_MODELS, weights=MODEL_WEIGHTS, k=1)[0]
             logger.info(f"固定种子({seed_val})选择 {selected_model} 作为背景车辆模型")
             self.veh_model_name = f"background/{selected_model}.glb"
 
+        # 对于仅有 high_poly 版本的车辆类型，强制使用 high_poly 目录
+        model_type = self._veh_model_type
+        if self.veh_type in HIGH_POLY_ONLY:
+            model_type = 'vehicles_high_poly'
+
         return Vehicle3DElement.current_file_path(
-            f"../../_assets_3d/{self._veh_model_type}/{self.veh_model_name}"
+            f"../../_assets_3d/{model_type}/{self.veh_model_name}"
         )
 
     def update_node(

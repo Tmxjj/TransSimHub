@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2024-07-12 21:38:26
 @Description: 场景加载相关的方法 (用于初始化场景)
-LastEditTime: 2026-04-19 15:06:05
+LastEditTime: 2026-04-19 16:54:54
 '''
 from ....utils.get_abs_path import get_abs_path
 current_file_path = get_abs_path(__file__)

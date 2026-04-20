@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2024-07-13 20:53:01
 @Description: 场景的同步, 根据 SUMO 的信息更新 panda3d
-LastEditTime: 2026-04-18 21:39:50
+LastEditTime: 2026-04-20 12:21:10
 '''
 import math
 from loguru import logger
@@ -14,6 +14,28 @@ from ..traffic_elements.vehicle import Vehicle3DElement
 from ..traffic_elements.traffic_signals import TLS3DElement
 from ..traffic_elements.aircraft import Aircraft3DElement
 from ...vis3d_utils.core_math import calculate_center_point, vec_to_radians, vec_2d
+
+# 事件占位车辆的 vType ID 集合（精确匹配）及前缀（兼容带长度后缀的变体，如 barrier_A_5.00）
+# 这些车辆的 3D 渲染完全由 EmergencyManager3D 负责，scene_sync 不应为其创建 Vehicle3DElement，
+# 否则会在 SUMO stop 位置（区间中心）额外渲染一辆幽灵背景车辆。
+_EVENT_VTYPE_EXACT = frozenset({
+    'crash_vehicle_a', 'crash_vehicle_lane2', 'crash_vehicle_b', 
+    'pedestrian_lying', 'pedestrian_crossing',
+    'barrier_A', 'barrier_B', 'barrier_C', 'barrier_D', 'barrier_E',
+    'tree_branch_1lane', 'tree_branch_3lanes',
+})
+_EVENT_VTYPE_PREFIXES = ('barrier_', 'tree_branch_')
+
+
+def _is_event_vehicle(veh_type: str) -> bool:
+    """判断是否为事件占位车辆（由 EmergencyManager3D 专属渲染）"""
+    if veh_type in _EVENT_VTYPE_EXACT:
+        return True
+    for prefix in _EVENT_VTYPE_PREFIXES:
+        if veh_type.startswith(prefix):
+            return True
+    return False
+
 
 VALID_SENSORS = {
     'aircraft': ['aircraft_all', 'aircraft_vehicle'],
@@ -77,14 +99,6 @@ class SceneSync(object):
         self._vehicle_elements = {} # 加入渲染的车辆
         self._tls_elements = {} # 加入信号灯 (每一个 in road 会有一个), 这里信号灯没有实体, 只有 sensor
         self._aircraft_elements = {} # 目前 aircraft 没有实体, 只有摄像头
-
-        # 共享的车辆 PBR 材质 —— 让车漆拥有金属反射质感, 同时保证会向路面投射阴影
-        # simplepbr 只读 baseColor / metallic / roughness, 不读 legacy 的 specular / shininess
-        # baseColor 设为白色, 让 GLB 自带的 texture 透出车身颜色
-        self._vehicle_material = Material("vehicle_material")
-        self._vehicle_material.setBaseColor(Vec4(1.0, 1.0, 1.0, 1.0))  # 不染色, 保留 GLB 贴图颜色
-        self._vehicle_material.setMetallic(0.5)   # 车漆半金属感
-        self._vehicle_material.setRoughness(0.25) # 中低粗糙度, 有明显高光但不至于像镜子
 
     @staticmethod
     def validate_sensor_config(sensor_config: Dict[str, List[str]]) -> bool:
@@ -190,6 +204,11 @@ class SceneSync(object):
         return veh_ids, aircraft_ids
 
     def _manage_vehicle_element(self, veh_id, veh_info) -> None:
+        # 事件占位车辆（路障、碰撞残骸、倒地行人等）由 EmergencyManager3D 专属渲染，
+        # 跳过 Vehicle3DElement 避免在 SUMO stop 位置产生幽灵背景车辆
+        if _is_event_vehicle(veh_info['vehicle_type']):
+            return
+
         # 获得车辆传感器的配置信息
         element = self._vehicle_elements.get(veh_id)
         if not element: # 如果车辆不存在
@@ -223,7 +242,6 @@ class SceneSync(object):
                 
                 # 3. 确保车辆向深度缓冲区写入数据（投射阴影的前提）
                 element.veh_node_path.set_depth_write(True)
-                element.veh_node_path.setMaterial(self._vehicle_material, 1)
                 
             # 只有特定的车辆才需要挂载传感器
             if veh_id in self.sensor_config.get('vehicle', {}):

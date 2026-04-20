@@ -5,14 +5,12 @@
 - TshubEnvironment （逻辑层）与 SUMO 进行交互, 获得 SUMO 的数据 (这部分利用 TshubEnvironment)，处理车辆运动、红绿灯逻辑、碰撞检测等。
 - TSHubRenderer （视觉层）对 SUMO 的环境进行渲染 (这部分利用 TSHubRenderer)
 - TShubSensor 获得渲染的场景的数据, 作为新的 state 进行输出
-LastEditTime: 2026-03-22 23:33:31
+LastEditTime: 2026-04-19 21:48:36
 '''
 import os
 import sys
 from loguru import logger
 from typing import Any, Dict, List
-
-from utils.generate_events import EventManager
 
 from .base_env3d import BaseSumoEnvironment3D
 
@@ -24,6 +22,53 @@ import xml.etree.ElementTree as ET
 import os
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
+
+
+class EventManager:
+    """
+    解析路由文件中的事件参数（<param> 标签），按时间窗口向 EmergencyManager3D 提供活跃事件列表。
+    仅负责"读取"与"过滤"，不负责生成路由文件（生成由 scripts/event_scene_generation/ 完成）。
+    """
+    def __init__(self):
+        self.active_events = []
+
+    def load_events_from_xml(self, route_xml_path: str) -> list:
+        """解析 .rou.xml，提取含 pos_x/pos_y 参数的 <trip> 作为可渲染事件"""
+        self.active_events = []
+        if not os.path.exists(route_xml_path):
+            logger.warning(f"SIM: Event route file not found: {route_xml_path}")
+            return self.active_events
+
+        try:
+            tree = ET.parse(route_xml_path)
+            root = tree.getroot()
+            for trip in root.findall("trip"):
+                params = {p.get("key"): p.get("value") for p in trip.findall("param")}
+                if "pos_x" not in params or "pos_y" not in params:
+                    continue
+                stop = trip.find("stop")
+                duration = float(stop.get("duration", 0)) if stop is not None else 0.0
+                start_time = float(trip.get("depart", 0))
+                self.active_events.append({
+                    'id':         trip.get("id"),
+                    'type':       params.get("event_type", "unknown"),
+                    'x':          float(params["pos_x"]),
+                    'y':          float(params["pos_y"]),
+                    'heading':    float(params.get("heading", 0.0)),
+                    'start_time': start_time,
+                    'end_time':   start_time + duration,
+                    'model_path': params.get("model_path", ""),
+                })
+        except Exception as e:
+            logger.warning(f"SIM: Failed to parse event route file {route_xml_path}: {e}")
+
+        logger.info(f"SIM: Loaded {len(self.active_events)} events from {route_xml_path}")
+        return self.active_events
+
+    def get_active_events(self, current_time: float) -> list:
+        """返回当前仿真时刻处于激活时间窗内的事件"""
+        return [e for e in self.active_events
+                if e['start_time'] <= current_time <= e['end_time']]
 
 # 辅助函数，从sumocfg中去netfile的路径
 def get_sumo_net_file(config_file):
@@ -103,6 +148,7 @@ class Tshub3DEnvironment(BaseSumoEnvironment3D):
             sensor_config: Dict[str, List[str]] = None,
             is_render: bool = True, # 是否渲染
             is_every_frame: bool = False, # 是否每一帧都渲染
+            show_closure_zone: bool = True, # 是否在路障占道区间渲染半透明封闭区域
         ) -> None:
 
         self.debuger_print_node = debuger_print_node
@@ -131,8 +177,8 @@ class Tshub3DEnvironment(BaseSumoEnvironment3D):
                 if os.path.exists(route_xml_path):
                     self.event_logic_manager = EventManager()
                     self.event_logic_manager.load_events_from_xml(route_xml_path)
-                    
-                    # 检查是否成功加载了事件
+
+                    # 检查是否成功加载了事件，将相对路径转换为绝对路径
                     if len(self.event_logic_manager.active_events) > 0:
                         base_dir = os.path.abspath(os.path.join(current_dir, "../../../"))
                         for e in self.event_logic_manager.active_events:
@@ -196,7 +242,8 @@ class Tshub3DEnvironment(BaseSumoEnvironment3D):
             from .vis3d_renderer.emergency.emergency_manager import EmergencyManager3D
             self.emergency_renderer = EmergencyManager3D(
                 self.tshub_render._showbase_instance,
-                self.tshub_render._root_np
+                self.tshub_render._root_np,
+                show_closure_zone=show_closure_zone,
             )
         else:
             self.tshub_render = None
@@ -208,6 +255,8 @@ class Tshub3DEnvironment(BaseSumoEnvironment3D):
         logger.info(f'SIM: 完成 TSHub 初始化, 得到地图和信号灯信息.')
         
         if self.is_render:
+            if getattr(self, 'emergency_renderer', None) is not None:
+                self.emergency_renderer.clear()
             self.tshub_render.reset(state_infos) # 重置 render, 需要将信号灯的信息传入, 辅助进行路口 camera 的初始化
 
             # 加入一个简单任务, 避免 userExit 出错
@@ -339,19 +388,17 @@ class Tshub3DEnvironment(BaseSumoEnvironment3D):
                 if tls_id in states['tls'] and states['tls'][tls_id]['can_perform_action']:
                     can_perform_action = True
                     break
-        # --- 动态渲染紧急事件 (在底层自身完成) ---
         if self.is_render and self.tshub_render and can_perform_action:
-           
-            # 委托给专门的 3D Event 模块进行处理
+
+            # 先更新事件场景节点，再渲染帧，确保事件模型出现在当帧图像中
             if getattr(self, 'event_logic_manager', None) is not None and getattr(self, 'emergency_renderer', None) is not None:
                 current_time = self.tshub_env.sim_step
                 active_events = self.event_logic_manager.get_active_events(current_time)
                 self.emergency_renderer.update(active_events)
-            # ----------------------------------------------------
 
             sensor_data = self.tshub_render.step(states, should_count_vehicles=self.should_count_vehicles)
             # --- 新增功能：计算BEV视角下各个进口道的车道车辆数 ---
-            sensor_data['bev_lane_vehicle_counts'] = self._calculate_bev_lane_vehicle_counts(states)
+            # sensor_data['bev_lane_vehicle_counts'] = self._calculate_bev_lane_vehicle_counts(states)
             
         else:
             # 组装 sensor_data (不包含 image)
