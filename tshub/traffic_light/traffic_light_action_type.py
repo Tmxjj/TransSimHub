@@ -32,3 +32,8 @@ class tls_action_type(enum.Enum):
     SetPhaseDuration = 'set_phase_diration'
     """Action= ``int``. The new phase duration for the current traffic phase.
     """
+
+    ChooseNextPhaseWithDuration = 'choose_next_phase_with_duration'
+    """Action= ``(int, int)``. Jointly select next phase index and green duration (seconds).
+    Duration must be chosen from GREEN_DURATION_CANDIDATES = [10, 15, 20, 25, 30, 35].
+    """

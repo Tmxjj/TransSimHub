@@ -19,6 +19,7 @@ from .tls_type.choose_next_phase import choose_next_phase
 from .tls_type.choose_next_phase_syn import choose_next_phase_syn
 from .tls_type.adjust_cycle_duration import adjust_cycle_duration
 from .tls_type.set_phase_duration import set_phase_duration
+from .tls_type.choose_next_phase_with_duration import choose_next_phase_with_duration
 from ..utils.format_dict import dict_to_str
 
 @dataclass
@@ -40,7 +41,8 @@ class TrafficLightInfo:
     roads_lanes: Dict[str, List[str]] = None # 每个 edge 包含的 lanes
     in_roads: List[str] = None # 路口的进入车道的 id
     out_roads: List[str] = None # 出口的 edge id
-    in_road_stop_line: Dict[str, List[Tuple[float, float]]] = None # 路口进入 road 的 point 的坐标, {'161701303#7.248': [(1777.55, 911.8), (1775.26, 914.04), (1772.97, 916.28), (1770.68, 918.51)], ...}
+    in_road_stop_line: Dict[str, List[Tuple[float, float]]] = None # 路口进入 road 的 point 的坐标, {'161701303#7.248': [(1777.55, 911.8), ...], ...}
+    in_road_upstream_point: Dict[str, List[Tuple[float, float]]] = None # 进口道上游固定距离（如300m）或起点的坐标，用于上游摄像头安装位置
     in_roads_heading: Dict[str, List[float]] = None # 路口进入车道的 angle 角度
     out_roads_heading: Dict[str, List[float]] = None # 路口出口车道的 angle 角度
     fromEdge_toEdge: Dict[str, List[str]] = None # {fromEdge_direction: [fromEdge, toEdge, fromLane, toLane], ...}
@@ -69,6 +71,8 @@ class TrafficLightInfo:
             self.tls_action = adjust_cycle_duration(ts_id=self.id, sumo=self.sumo, delta_time=self.delta_time)
         elif _action == tls_action_type.SetPhaseDuration:
             self.tls_action = set_phase_duration(ts_id=self.id, sumo=self.sumo, delta_time=self.delta_time)
+        elif _action == tls_action_type.ChooseNextPhaseWithDuration:
+            self.tls_action = choose_next_phase_with_duration(ts_id=self.id, sumo=self.sumo, delta_time=self.delta_time)
         else:
             logger.error(f'SIM: 信号灯动作只支持 choose_next_phase 和 next_or_not, 现在是 {self.action_type}.')
             raise ValueError(f'SIM: 信号灯动作只支持 choose_next_phase 和 next_or_not, 现在是 {self.action_type}.')
@@ -78,6 +82,7 @@ class TrafficLightInfo:
         self.in_roads = self.tls_action.in_roads
         self.out_roads = self.tls_action.out_roads
         self.in_road_stop_line = self.tls_action.in_road_stop_line
+        self.in_road_upstream_point = self.tls_action.in_road_upstream_point
         self.in_roads_heading = self.tls_action.in_roads_heading
         self.out_roads_heading = self.tls_action.out_roads_heading
         self.movement_ids = self.tls_action.movement_ids
@@ -150,9 +155,15 @@ class TrafficLightInfo:
 
     def control_traffic_light(self, action) -> None:
         """
-        控制交通信号灯, 如果没有到更新时间, feature 是不会更新的
+        控制交通信号灯, 如果没有到更新时间, feature 是不会更新的。
+        action 可以是:
+          - int: 用于 choose_next_phase / next_or_not 等单值动作类型
+          - (int, int): 用于 choose_next_phase_with_duration，(phase_id, green_duration)
         """
         if self.can_perform_action:
-            self.tls_action.set_next_phases(action)
+            if isinstance(action, (tuple, list)) and len(action) == 2:
+                self.tls_action.set_next_phases(action[0], action[1])
+            else:
+                self.tls_action.set_next_phases(action)
         else:
             self.tls_action.update()

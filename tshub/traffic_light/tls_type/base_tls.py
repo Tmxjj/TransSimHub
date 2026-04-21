@@ -5,6 +5,7 @@
 LastEditTime: 2025-07-16 19:18:12
 '''
 import sumolib
+import math
 from abc import ABC, abstractmethod
 from ...sumo_tools.sumo_infos.tls_connections import tls_connection
 
@@ -50,12 +51,37 @@ class BaseTLS(ABC):
         self.in_roads_heading = {_road_id:self.sumo.edge.getAngle(_road_id) for _road_id in self.in_roads}
         self.out_roads_heading = {_road_id:self.sumo.edge.getAngle(_road_id) for _road_id in self.out_roads}
 
-        # 获得每一个 in road 的 stop line 的坐标
+        # 获得每一个 in road 的 stop line 的坐标（lane 末端 = 停止线处）
         self.in_road_stop_line = {_road_id:list() for _road_id in self.in_roads}
+        # 获得每一个 in road 的上游端坐标（距离停止线300m处的点或起点，用于上游摄像头安装位置）
+        self.in_road_upstream_point = {_road_id:list() for _road_id in self.in_roads}
         for _lane_id in self.in_lanes:
             _road_name = self.sumo.lane.getEdgeID(_lane_id)
-            _lane_end_position = self.sumo.lane.getShape(_lane_id)[-1] # 这个是 lane 出口中心的点
+            _lane_shape = self.sumo.lane.getShape(_lane_id)
+            _lane_end_position = _lane_shape[-1]   # lane 出口端（停止线处）
+            
+            _lane_length = self.lanes_lenght[_lane_id]
+            if _lane_length >= 300:
+                # 寻找距离停止线300m处的坐标点（考虑到路段可能非笔直）
+                dist_accum = 0.0
+                _lane_start_position = _lane_shape[0]  # 默认值
+                for i in range(len(_lane_shape) - 1, 0, -1):
+                    p1 = _lane_shape[i]
+                    p2 = _lane_shape[i-1]
+                    seg_len = math.hypot(p2[0] - p1[0], p2[1] - p1[1])
+                    if dist_accum + seg_len >= 300:
+                        ratio = (300 - dist_accum) / seg_len
+                        # p1 更靠近停止线端，p2 是朝向上游端
+                        x = p1[0] + ratio * (p2[0] - p1[0])
+                        y = p1[1] + ratio * (p2[1] - p1[1])
+                        _lane_start_position = (x, y)
+                        break
+                    dist_accum += seg_len
+            else:
+                _lane_start_position = _lane_shape[0]  # 若小于300m，则取 lane 最起点
+
             self.in_road_stop_line[_road_name].append(_lane_end_position)
+            self.in_road_upstream_point[_road_name].append(_lane_start_position)
 
         self.program_id = self.sumo.trafficlight.getProgram(self.id) # 获得这个信号的当前的 program id
 

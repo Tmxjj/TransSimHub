@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2024-07-13 20:53:01
 @Description: 场景的同步, 根据 SUMO 的信息更新 panda3d
-LastEditTime: 2026-04-20 12:21:10
+LastEditTime: 2026-04-21 17:06:24
 '''
 import math
 from loguru import logger
@@ -37,11 +37,31 @@ def _is_event_vehicle(veh_type: str) -> bool:
     return False
 
 
+# SUMO heading（°）到东南西北方向名称的映射。
+# SUMO 定义：0° = 正北，顺时针增加（90° = 正东，180° = 正南，270° = 正西）。
+# 索引约定（顺时针）：0=North, 1=East, 2=South, 3=West。
+_DIRECTION_NAMES = ['North', 'East', 'South', 'West']
+_DIRECTION_SHORT  = ['N',     'E',    'S',     'W']
+
+def _heading_to_direction_index(heading_deg: float) -> int:
+    """将 SUMO heading（°，北=0 顺时针）映射到最近的方向索引（0=N,1=E,2=S,3=W）。"""
+    # 进口道的 heading 是车辆行驶方向（朝向路口中心），因此：
+    # 从北方来的车辆行驶方向朝南（heading≈180°）→ 进口道在北方（North approach）
+    # 从东方来的车辆行驶方向朝西（heading≈270°）→ 进口道在东方（East approach）
+    # 所以需要将 heading 加 180° 再取模，得到进口道实际所在方位
+    approach_bearing = (heading_deg + 180.0) % 360.0
+    idx = int((approach_bearing + 45.0) / 90.0) % 4
+    return idx
+
+
 VALID_SENSORS = {
     'aircraft': ['aircraft_all', 'aircraft_vehicle'],
     'tls': [
-        'junction_front_all', 'junction_front_vehicle', 
+        'junction_front_all', 'junction_front_vehicle',
         'junction_back_all', 'junction_back_vehicle'
+    ],
+    'upstream': [
+        'junction_front_all', 'junction_front_vehicle',
     ],
     'vehicle': [
         'front_left_all', 'front_right_all', 'front_all', 
@@ -99,6 +119,7 @@ class SceneSync(object):
         self._vehicle_elements = {} # 加入渲染的车辆
         self._tls_elements = {} # 加入信号灯 (每一个 in road 会有一个), 这里信号灯没有实体, 只有 sensor
         self._aircraft_elements = {} # 目前 aircraft 没有实体, 只有摄像头
+        self._upstream_elements = {} # 上游摄像头（每个进口道上游端一个），无实体只有 sensor
 
     @staticmethod
     def validate_sensor_config(sensor_config: Dict[str, List[str]]) -> bool:
@@ -123,38 +144,103 @@ class SceneSync(object):
         # 初始化 & 关闭所有车辆和飞行器的 sensors
         self.remove_missing_elements(set(), self._vehicle_elements, 'vehicle')
         self.remove_missing_elements(set(), self._aircraft_elements, 'aircraft')
-        
-        # 初始化信号灯 (如果没有初始化 & 路口有信号灯的信息 & 设置了信号灯的传感器)
-        if (not self._tls_elements) and ("tls" in tshub_init_obs) and ("tls" in self.sensor_config): # 只需要加载一次即可
+
+        # 初始化进口道信号灯摄像头
+        if (not self._tls_elements) and ("tls" in tshub_init_obs) and ("tls" in self.sensor_config):
             for tls_id, tls_info in tshub_init_obs['tls'].items():
-                if tls_id in self.sensor_config['tls']: # 只初始化指定的信号灯路口
+                if tls_id in self.sensor_config['tls']:
                     self._initialize_tls_elements(tls_id, tls_info)
 
+        # 初始化上游摄像头（需在 sensor_config 中配置 'upstream' 键）
+        if (not self._upstream_elements) and ("tls" in tshub_init_obs) and ("upstream" in self.sensor_config):
+            for tls_id, tls_info in tshub_init_obs['tls'].items():
+                if tls_id in self.sensor_config['upstream']:
+                    self._initialize_upstream_elements(tls_id, tls_info)
+
     def _initialize_tls_elements(self, tls_id, tls_info) -> None:
-        """初始化某一个信号灯传感器
+        """初始化某一个路口的进口道摄像头（停止线处）。
+        element_id 格式：{tls_id}_{direction_short}，例如 J1_N / J1_E / J1_S / J1_W。
         """
-        sensor_types = self.sensor_config['tls'][tls_id].get('sensor_types', []) # 获得特定路口(tls_id)传感器类型
-        tls_camera_height = self.sensor_config['tls'][tls_id].get('tls_camera_height', 10) # 传感器的高度
-        # 获得路口的方向, 在每一个方向安装摄像头
+        sensor_types = self.sensor_config['tls'][tls_id].get('sensor_types', [])
+        tls_camera_height = self.sensor_config['tls'][tls_id].get('tls_camera_height', 10)
+        # 按 heading 从小到大排序（SUMO 北=0 顺时针），保证顺序稳定
         sorted_road_ids = sorted(tls_info['in_roads_heading'], key=tls_info['in_roads_heading'].get)
 
-        for index, road_id in enumerate(sorted_road_ids):
-            tls_element_id = f'{tls_id}_{index}'
-            position = calculate_center_point(tls_info['in_road_stop_line'][road_id])
+        for road_id in sorted_road_ids:
             heading = tls_info['in_roads_heading'][road_id]
+            dir_idx = _heading_to_direction_index(heading)
+            dir_short = _DIRECTION_SHORT[dir_idx]
+            tls_element_id = f'{tls_id}_{dir_short}'
+            position = calculate_center_point(tls_info['in_road_stop_line'][road_id])
             element = TLS3DElement(
-                fig_width = self.fig_width,
-                fig_height = self.fig_height,
-                fig_resolution = self.resolution,
-                element_id = tls_element_id, 
-                element_position = position, 
-                element_heading = heading, 
-                root_np = self.root_np, 
-                showbase_instance = self.showbase_instance,
+                fig_width=self.fig_width,
+                fig_height=self.fig_height,
+                fig_resolution=self.resolution,
+                element_id=tls_element_id,
+                element_position=position,
+                element_heading=heading,
+                root_np=self.root_np,
+                showbase_instance=self.showbase_instance,
                 tls_camera_height=tls_camera_height
-            ) # 初始化路口信号灯的 element
+            )
             element.attach_sensors_to_element(sensor_types)
-            self._tls_elements[tls_element_id] = element      
+            self._tls_elements[tls_element_id] = element
+            logger.info(f'SIM: Init approach cam [{tls_element_id}] heading={heading:.1f}° dir={_DIRECTION_NAMES[dir_idx]}')
+
+    def _initialize_upstream_elements(self, tls_id, tls_info) -> None:
+        """初始化某一个路口的上游道路摄像头。
+        如果进口道长度 >= 300m，摄像头将安装在上游 300m 处（考虑弯道）；若 < 300m，则安装在 lane 起点（最上游端）。
+        摄像头朝向与进口道行驶方向相反。拍摄的方向为这个道路下游方向
+        element_id 格式：upstream_{tls_id}_{direction_short}，例如 upstream_J1_N。
+        传感器图像 key 格式：junction_front_all_upstream_{tls_id}_{direction_short}。
+
+        位置来源：tls_info['in_road_upstream_point'][road_id] 中各 lane 设定的坐标均值。
+        若该字段不存在（旧版 TrafficLightInfo），则跳过并给出警告。
+        """
+        upstream_cfg = self.sensor_config['upstream'].get(tls_id, {})
+        sensor_types = upstream_cfg.get('sensor_types', ['junction_front_all'])
+        camera_height = upstream_cfg.get('tls_camera_height', 15)
+
+        upstream_points = tls_info.get('in_road_upstream_point')
+        if not upstream_points:
+            logger.warning(
+                f'SIM: tls_info 中缺少 in_road_upstream_point，跳过路口 {tls_id} 的上游摄像头初始化。'
+                f'请确认 BaseTLS 已更新以计算上游端坐标。'
+            )
+            return
+
+        sorted_road_ids = sorted(tls_info['in_roads_heading'], key=tls_info['in_roads_heading'].get)
+
+        for road_id in sorted_road_ids:
+            if road_id not in upstream_points or not upstream_points[road_id]:
+                logger.warning(f'SIM: road {road_id} 无上游端坐标，跳过上游摄像头。')
+                continue
+
+            heading = tls_info['in_roads_heading'][road_id]
+            dir_idx = _heading_to_direction_index(heading)
+            dir_short = _DIRECTION_SHORT[dir_idx]
+            element_id = f'upstream_{tls_id}_{dir_short}'
+            position = calculate_center_point(upstream_points[road_id])
+
+            # 上游摄像头朝向与进口道行驶方向相反（拍摄这个道路下游方向）
+            camera_heading = (heading + 180) % 360
+            element = TLS3DElement(
+                fig_width=self.fig_width,
+                fig_height=self.fig_height,
+                fig_resolution=self.resolution,
+                element_id=element_id,
+                element_position=position,
+                element_heading=camera_heading,
+                root_np=self.root_np,
+                showbase_instance=self.showbase_instance,
+                tls_camera_height=camera_height
+            )
+            element.attach_sensors_to_element(sensor_types)
+            self._upstream_elements[element_id] = element
+            logger.info(
+                f'SIM: Init upstream cam [{element_id}] pos={position} '
+                f'heading={heading:.1f}° dir={_DIRECTION_NAMES[dir_idx]} (Targeting ~300m upstream)'
+            )
 
 
     def _sync(self, tshub_obs):
@@ -172,10 +258,11 @@ class SceneSync(object):
         # 所有传感器渲染
         self.showbase_instance.graphicsEngine.renderFrame()
 
-        # 获得 camera 的数据
+        # 获得 camera 的数据（进口道摄像头 + 上游摄像头 + 车辆传感器 + 飞行器摄像头）
         _sensors = {
-            **self.collect_sensors(self._tls_elements), 
-            **self.collect_sensors(self._vehicle_elements), 
+            **self.collect_sensors(self._tls_elements),
+            **self.collect_sensors(self._upstream_elements),
+            **self.collect_sensors(self._vehicle_elements),
             **self.collect_sensors(self._aircraft_elements)
         }
         return _sensors
