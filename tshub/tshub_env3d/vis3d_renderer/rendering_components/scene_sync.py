@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2024-07-13 20:53:01
 @Description: 场景的同步, 根据 SUMO 的信息更新 panda3d
-LastEditTime: 2026-04-21 17:06:24
+LastEditTime: 2026-04-22 11:31:15
 '''
 import math
 from loguru import logger
@@ -43,8 +43,18 @@ def _is_event_vehicle(veh_type: str) -> bool:
 _DIRECTION_NAMES = ['North', 'East', 'South', 'West']
 _DIRECTION_SHORT  = ['N',     'E',    'S',     'W']
 
-def _heading_to_direction_index(heading_deg: float) -> int:
+def _heading_to_direction_index(id: str, heading_deg: float) -> int:
     """将 SUMO heading（°，北=0 顺时针）映射到最近的方向索引（0=N,1=E,2=S,3=W）。"""
+    if id == "J2": # J2 为倾斜路口，特殊映射
+        if 180 <= heading_deg < 270: # 315156946#0 (222.12) -> North
+            return 0
+        elif 270 <= heading_deg <= 360: # 989312046#0 (330.66) -> East
+            return 1
+        elif 0 <= heading_deg < 90: # E1 (42.13) -> South
+            return 2
+        elif 90 <= heading_deg < 180: # 525074961#6 (152.77) -> West
+            return 3
+
     # 进口道的 heading 是车辆行驶方向（朝向路口中心），因此：
     # 从北方来的车辆行驶方向朝南（heading≈180°）→ 进口道在北方（North approach）
     # 从东方来的车辆行驶方向朝西（heading≈270°）→ 进口道在东方（East approach）
@@ -168,7 +178,7 @@ class SceneSync(object):
 
         for road_id in sorted_road_ids:
             heading = tls_info['in_roads_heading'][road_id]
-            dir_idx = _heading_to_direction_index(heading)
+            dir_idx = _heading_to_direction_index(tls_id, heading)
             dir_short = _DIRECTION_SHORT[dir_idx]
             tls_element_id = f'{tls_id}_{dir_short}'
             position = calculate_center_point(tls_info['in_road_stop_line'][road_id])
@@ -185,7 +195,7 @@ class SceneSync(object):
             )
             element.attach_sensors_to_element(sensor_types)
             self._tls_elements[tls_element_id] = element
-            logger.info(f'SIM: Init approach cam [{tls_element_id}] heading={heading:.1f}° dir={_DIRECTION_NAMES[dir_idx]}')
+            logger.info(f'SIM: Init approach cam [{tls_element_id}] roadid={road_id} heading={heading:.1f}° dir={_DIRECTION_NAMES[dir_idx]}')
 
     def _initialize_upstream_elements(self, tls_id, tls_info) -> None:
         """初始化某一个路口的上游道路摄像头。
@@ -217,7 +227,7 @@ class SceneSync(object):
                 continue
 
             heading = tls_info['in_roads_heading'][road_id]
-            dir_idx = _heading_to_direction_index(heading)
+            dir_idx = _heading_to_direction_index(tls_id,heading)
             dir_short = _DIRECTION_SHORT[dir_idx]
             element_id = f'upstream_{tls_id}_{dir_short}'
             position = calculate_center_point(upstream_points[road_id])
@@ -238,7 +248,7 @@ class SceneSync(object):
             element.attach_sensors_to_element(sensor_types)
             self._upstream_elements[element_id] = element
             logger.info(
-                f'SIM: Init upstream cam [{element_id}] pos={position} '
+                f'SIM: Init upstream cam [{element_id}] roadid={road_id} pos={position} '
                 f'heading={heading:.1f}° dir={_DIRECTION_NAMES[dir_idx]} (Targeting ~300m upstream)'
             )
 
