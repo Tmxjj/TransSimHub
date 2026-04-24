@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2024-07-08 22:21:18
 @Description: 3D 场景内的车辆
-LastEditTime: 2026-04-20 17:28:19
+LastEditTime: 2026-04-24 21:39:07
 '''
 import random
 import hashlib
@@ -88,7 +88,7 @@ class Vehicle3DElement(BaseElement):
             'emergency': "public_transport/emergency.glb", # 救护车
             'fire_engine': "public_transport/fire_engine.glb", # 消防车
             'taxi': "public_transport/taxi.glb",            # 出租车
-            'bus': "public_transport/bus.glb",              # 公交车
+            'bus': "public_transport/bus_a.glb",              # 公交车（使用bus_a.glb 文件 白顶方便识别 bus.glb为红顶）
             'school_bus': "public_transport/school_bus.glb", # 校车
             # 特殊事件
             'barrier_A': "event/barrier_A.glb",             # 路障 A

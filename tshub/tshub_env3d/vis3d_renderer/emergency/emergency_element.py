@@ -1,7 +1,7 @@
 '''
 Author: yufei Ji
 Date: 2026-03-22 22:15:44
-LastEditTime: 2026-04-20 19:35:15
+LastEditTime: 2026-04-24 23:08:19
 Description: this script is used to 紧急事件3D元素
 FilePath: /VLMTraffic/TransSimHub/tshub/tshub_env3d/vis3d_renderer/emergency/emergency_element.py
 '''
@@ -39,14 +39,14 @@ class Emergency3DElement:
             model_np.setColorScale(1.5, 1.5, 1.5, 1.0)
             
             # --- 根据事件类别针对性地控制缩放系数 ---
-            if self.event_type in ['tree_branch_1lane','tree_branch_3lane']:
-                model_np.setScale(1.5, 1.5, 1.5)
-            elif self.event_type in ('barrier_A', 'barrier_B', 'barrier_C',
-                                     'barrier_D', 'barrier_E'):
+            if self.event_type.startswith(('tree_branch_1lane','tree_branch_3lane')):
+                model_np.setScale(1.4, 1.4, 1.4)
+            elif self.event_type.startswith(('barrier_A', 'barrier_B', 'barrier_C',
+                                     'barrier_D', 'barrier_E')):
                 model_np.setScale(1.0, 1.0, 1.0)
-            elif self.event_type == 'pedestrian_lying':
+            elif self.event_type.startswith('pedestrian_lying'):
                 model_np.setScale(1.0, 1.0, 1.0)
-            elif self.event_type == 'pedestrian_crossing':
+            elif self.event_type.startswith('pedestrian_crossing'):
                 model_np.setScale(1.0, 1.0, 1.0)
             else:
                 model_np.setScale(1.0, 1.0, 1.0)

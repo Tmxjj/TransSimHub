@@ -147,13 +147,16 @@ class VehicleInfo:
         self.vehicle_type=vehicle_info.get(VehicleInfo.get_feature_index('vehicle_type'), None)
         
         
+    # next_tls 是 SUMO 订阅返回的 NamedTupleList，无法被 json.dump 序列化，
+    # 且路口 TLS 状态已由顶层 tls 字段独立提供，此处不需要输出。
+    _EXCLUDE_FIELDS = frozenset({'sumo', 'next_tls'})
+
     def get_features(self):
         output_dict = {}
         for field in fields(self):
             field_name = field.name
-            field_value = getattr(self, field_name)
-            if field_name != 'sumo':
-                output_dict[field_name] = field_value
+            if field_name not in self._EXCLUDE_FIELDS:
+                output_dict[field_name] = getattr(self, field_name)
         return output_dict
 
 
