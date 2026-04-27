@@ -13,7 +13,6 @@ from loguru import logger
 from typing import Any, Dict, List
 
 from .base_env3d import BaseSumoEnvironment3D
-
 from ..tshub_env.tshub_env import TshubEnvironment # tshub 与 sumo 交互
 from .vis3d_utils.core_math import calculate_center_point
 from .vis3d_renderer.tshub_render import TSHubRenderer # tshub3D render

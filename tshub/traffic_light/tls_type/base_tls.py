@@ -147,7 +147,10 @@ class BaseTLS(ABC):
         self.yellow_dict = {} # 储存从 phase-i --> phase-j 需要的中间过渡相位的 phase_id
         for phase in phases:
             state = phase.state
-            if 'G' in state: # 绿灯相位
+            # 绿灯相位：含 G 且不含 y。
+            # 排除 'y' 是为了兼容部分路网（如 France_Massy）中黄灯过渡相位同时含有 G
+            # （表示无冲突自由通行车道保持放行），避免将其误识别为独立的绿灯相位。
+            if 'G' in state and 'y' not in state:
                 # 找到所有的绿灯相位, 并将持续时间修改为 1h
                 self.green_phases.append(self.sumo.trafficlight.Phase(3600, state))
 

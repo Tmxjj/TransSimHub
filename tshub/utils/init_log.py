@@ -58,6 +58,28 @@ def golden_filter(record) -> bool:
         return True
     return False
 
+def rollout_filter(record) -> bool:
+    """单独过滤出 rollout 枚举相关的日志
+    """
+    if '[ROLLOUT]' in record['message']:
+        return True
+    return False
+
+def bulletin_filter(record) -> bool:
+    """单独过滤出 EventBulletin 上下游广播相关的日志
+    """
+    if '[Bulletin]' in record['message']:
+        return True
+    return False
+
+def vlm_filter(record) -> bool:
+    """单独过滤出 VLM 推理决策相关的日志（[VLM]、[MaxPressure]、[FixedTime]）
+    """
+    msg = record['message']
+    if '[VLM]' in msg or '[MaxPressure]' in msg or '[FixedTime]' in msg:
+        return True
+    return False
+
 def set_logger(log_path, file_log_level="DEBUG", terminal_log_level='INFO'):
     now = datetime.strftime(datetime.now(),'%Y-%m-%d_%H_%M_%S')
     log_path = os.path.join(log_path, now)
@@ -103,10 +125,37 @@ def set_logger(log_path, file_log_level="DEBUG", terminal_log_level='INFO'):
 
     # [新增] Golden Generation 日志文件 (捕获所有 [GOLDEN] 开头的日志)
     logger.add(
-        os.path.join(log_path, './Golden-{time}.log'), 
-        format="{time} | {level:<6} | {name}:{function}:{line} - {message}", 
-        filter=golden_filter, 
-        level=file_log_level, 
+        os.path.join(log_path, './Golden-{time}.log'),
+        format="{time} | {level:<6} | {name}:{function}:{line} - {message}",
+        filter=golden_filter,
+        level=file_log_level,
+        rotation="7 MB"
+    )
+
+    # [新增] Rollout 日志文件 (捕获所有 [ROLLOUT] 开头的日志)
+    logger.add(
+        os.path.join(log_path, './Rollout-{time}.log'),
+        format="{time} | {level:<6} | {name}:{function}:{line} - {message}",
+        filter=rollout_filter,
+        level=file_log_level,
+        rotation="7 MB"
+    )
+
+    # [新增] Bulletin 广播日志文件 (捕获所有 [Bulletin] 开头的日志)
+    logger.add(
+        os.path.join(log_path, './Bulletin-{time}.log'),
+        format="{time} | {level:<6} | {name}:{function}:{line} - {message}",
+        filter=bulletin_filter,
+        level=file_log_level,
+        rotation="3 MB"
+    )
+
+    # [新增] VLM 推理决策日志文件 (捕获 [VLM]、[MaxPressure]、[FixedTime] 日志)
+    logger.add(
+        os.path.join(log_path, './VLM-{time}.log'),
+        format="{time} | {level:<6} | {name}:{function}:{line} - {message}",
+        filter=vlm_filter,
+        level=file_log_level,
         rotation="7 MB"
     )
 

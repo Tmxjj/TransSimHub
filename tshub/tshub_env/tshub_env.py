@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2023-08-23 15:34:52
 @Description: 整合 "Veh"（车辆）、"Air"（航空）和 "Traf"（信号灯）的环境
-LastEditTime: 2026-03-06 11:15:39
+LastEditTime: 2026-04-27 19:28:38
 '''
 import os
 import sys
@@ -181,49 +181,9 @@ class TshubEnvironment(BaseSumoEnvironment):
         if self.is_map_builder_initialized:
             env_state.update(self.map_infos) # 地图信息是固定的, 只需要每次额外补充进去即可, 不需要每次计算
         return env_state
-    # TODO：完善 reward 计算方式
-    def __computer_reward(self) -> float:
-        """自定义 reward 的计算 (单步)
-        基于 self.obs 中的 TLS 数据计算综合指标:
-        Reward = w_speed * 平均速度 - w_queue * 排队指数
-        排队指数：
-        1、“完全停下的排队长度”：直接使用 tls_obs['J1']['jam_length_vehicle'] 累加即可
-        2、“包含缓慢移动的拥堵程度”：建议结合 last_step_mean_speed 和 last_step_occupancy 来综合判断
-        """
-        total_rewards_dict = {}
-        
-        # 权重参数
-        w_queue = 1.0   # 排队惩罚权重
-        w_speed = 0.5   # 速度奖励权重
-
-        # 获取 TLS 观测数据
-        tls_obs = self.obs.get('tls', {})
-        
-        for tls_id, tls_info in tls_obs.items():
-            # 提取关键指标: 速度和占用率
-            # 注意: last_step_mean_speed 为 -1 表示该车道无车
-            mean_speeds = tls_info.get('last_step_mean_speed', [])
-            occupancies = tls_info.get('last_step_occupancy', [])
-            
-            # 1. 计算排队指数 (Queue Score)
-            # 逻辑: 如果车道占用率 > 1% 且 平均速度 < 0.1 m/s，视为排队
-            current_queue_score = 0
-            for speed, occ in zip(mean_speeds, occupancies):
-                if occ > 1.0 and speed < 0.1 and speed != -1:
-                    # 估算: 占用率每 5% 约等于 1 辆积压车辆
-                    current_queue_score += (occ / 5.0)
-            
-            # 2. 计算平均通行速度 (Average Speed)
-            # 只统计有车的车道 (speed >= 0)
-            valid_speeds = [s for s in mean_speeds if s >= 0]
-            avg_speed = sum(valid_speeds) / len(valid_speeds) if valid_speeds else 0
-            
-            # 3. 聚合单路口奖励
-            # 速度越快越好(正)，排队越少越好(负)
-            step_reward = (w_speed * avg_speed) - (w_queue * current_queue_score)
-            total_rewards_dict[tls_id] = step_reward
-
-        return total_rewards_dict
+    def __computer_reward(self) -> dict:
+        '''reward 计算已迁移至 TSCEnvWrapper.reward_wrapper()，此处返回空 dict。'''
+        return {}
 
     def __compute_info(self):
         """每一步, 返回信息
