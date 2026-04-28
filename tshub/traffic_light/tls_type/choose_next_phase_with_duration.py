@@ -2,15 +2,15 @@
 Author: yufei Ji
 Date: 2026-04-21
 Description: 选择下一个相位 + 动态绿灯时长。
-    动作为 (new_phase: int, green_duration: int)，支持从候选集 [10,15,20,25,30,35] 秒中选择绿灯时长。
+    动作为 (new_phase: int, green_duration: int)，支持从候选集 [15,20,25,30,35,40] 秒中选择绿灯时长。
     黄灯状态机与 choose_next_phase 一致；next_action_time 按实际 green_duration 推算，实现异步决策。
-FilePath: TransSimHub/tshub/traffic_light/tls_type/choose_next_phase_with_duration.py
+FilePath: /VLMTraffic/TransSimHub/tshub/traffic_light/tls_type/choose_next_phase_with_duration.py
 '''
 from loguru import logger
 from .base_tls import BaseTLS
 
 # 合法绿灯时长候选集（秒）
-GREEN_DURATION_CANDIDATES = [10, 15, 20, 25, 30, 35]
+GREEN_DURATION_CANDIDATES = [15, 20, 25, 30, 35, 40]
 MIN_GREEN = GREEN_DURATION_CANDIDATES[0]
 MAX_GREEN = GREEN_DURATION_CANDIDATES[-1]
 
