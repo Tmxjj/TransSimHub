@@ -75,7 +75,8 @@ class VehicleBuilder(BaseBuilder):
 
     def subscribe_all_vehicles(self) -> None:
         """重新订阅所有存在的车辆 (Handling subscription loss after LoadState)
-        同时会清理掉在当前 simulation state 中不存在的车辆。
+        同时会清理掉在当前 simulation state 中不存在的车辆，
+        并将 loadState 后重新出现但 Python 侧已删除的车辆重新加入字典。
         """
         valid_ids = set(self.sumo.vehicle.getIDList())
         to_delete = []
@@ -86,10 +87,18 @@ class VehicleBuilder(BaseBuilder):
                 vehicle.sumo.vehicle.subscribeLeader(vehicle_id, dist=0)
             else:
                 to_delete.append(vehicle_id)
-        
-        # Cleanup phantom vehicles
+
+        # 清理 Python 有但 SUMO 无的幽灵车辆
         for vehicle_id in to_delete:
             self.__delete_vehicle(vehicle_id)
+
+        # 恢复 SUMO 有但 Python 无的车辆（rollout 期间离队、loadState 后复原）
+        for vehicle_id in valid_ids:
+            if vehicle_id not in self.vehicles:
+                self.create_objects(vehicle_id)
+                self.sumo.vehicle.subscribe(vehicle_id, VehicleInfo.SUBSCRIPTION_VARS)
+                self.sumo.vehicle.subscribeLeader(vehicle_id, dist=0)
+                logger.debug(f"SIM: [loadState 恢复] 重建车辆 {vehicle_id}")
 
     def update_objects_state(self) -> None:
         """更新场景中所有车辆信息, 包含三个部分:

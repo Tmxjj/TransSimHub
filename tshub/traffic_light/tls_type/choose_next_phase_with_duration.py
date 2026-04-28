@@ -38,7 +38,7 @@ class choose_next_phase_with_duration(BaseTLS):
         )
 
         self.phase_index = 0                    # 当前绿灯相位索引
-        self.time_since_last_phase_change = 0   # 距上次相位切换的仿真步数
+        self.yellow_end_time = 0.0              # 黄灯结束的 SUMO 仿真时间（秒）
         self.is_yellow = False                  # 当前是否处于黄灯过渡阶段
         self.next_action_time = 0               # 下一次决策的仿真时间（秒）
 
@@ -57,12 +57,12 @@ class choose_next_phase_with_duration(BaseTLS):
         green_duration = self._clamp_duration(green_duration)
 
         if self.phase_index == new_phase:
-            # 保持当前相位，仅重置绿灯时长
+            # 保持当前相位，仅重置绿灯时长；同相位不经过黄灯，直接在 green_duration 后触发下次决策
             self.sumo.trafficlight.setPhase(self.id, self.phase_index)
             self.sumo.trafficlight.setPhaseDuration(
                 tlsID=self.id, phaseDuration=green_duration
             )
-            self.next_action_time = self.sim_step + green_duration + self.yellow_time
+            self.next_action_time = self.sim_step + green_duration
             logger.debug(
                 'SIM: Time: {}; Keep Phase: {}; Duration: {}s; Next Action: {};'.format(
                     self.sim_step, self.phase_index, green_duration, self.next_action_time
@@ -81,14 +81,13 @@ class choose_next_phase_with_duration(BaseTLS):
             self.phase_index = new_phase
             # 黄灯结束后绿灯时长由 setPhaseDuration 在 update() 中设置
             self._pending_green_duration = green_duration
+            self.yellow_end_time = self.sim_step + self.yellow_time
             self.next_action_time = self.sim_step + green_duration + self.yellow_time
             self.is_yellow = True
-            self.time_since_last_phase_change = 0
 
     def update(self) -> None:
         """每仿真步调用，负责黄灯 → 绿灯切换并设置绿灯时长。"""
-        self.time_since_last_phase_change += 1
-        if self.is_yellow and self.time_since_last_phase_change == self.yellow_time:
+        if self.is_yellow and self.sim_step >= self.yellow_end_time:
             self.sumo.trafficlight.setPhase(self.id, self.phase_index)
             # 设置本次绿灯时长（仅对本次相位生效）
             pending = getattr(self, '_pending_green_duration', self.delta_time)
