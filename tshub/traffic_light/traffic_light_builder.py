@@ -5,7 +5,6 @@
 @LastEditTime: 2024-07-19 18:53:52
 '''
 import traci
-import numpy as np
 from collections import defaultdict
 from typing import Dict, List
 
@@ -48,21 +47,20 @@ class TrafficLightBuilder(BaseBuilder):
         """
         为场景初始化所有的交通信号灯
         """
-        zeros = np.zeros(12) # 十字路口包含 12 个 movement
         for _tls_id in self.tls_ids:
             traffic_light = TrafficLightInfo.create_traffic_light(
                 id=_tls_id,
                 action_type=self.action_type,
                 this_phase_index=0,
                 delta_time=self.delta_time,
-                last_step_vehicle_id_list=[[] for _ in range(12)],
-                last_step_mean_speed=zeros.tolist(), 
-                jam_length_vehicle=zeros.tolist(), 
-                jam_length_meters=zeros.tolist(),
-                last_step_occupancy=zeros.tolist(),
-                this_phase=zeros.astype(bool).tolist(), 
-                last_phase=zeros.astype(bool).tolist(), 
-                next_phase=zeros.astype(bool).tolist(), 
+                last_step_vehicle_id_list=[],
+                last_step_mean_speed=[],
+                jam_length_vehicle=[],
+                jam_length_meters=[],
+                last_step_occupancy=[],
+                this_phase=[],
+                last_phase=[],
+                next_phase=[],
                 sumo=self.sumo,
             )
             self.traffic_lights[_tls_id] = traffic_light
@@ -154,7 +152,10 @@ class TrafficLightBuilder(BaseBuilder):
                     }
                 }
         """
-        for _tls_id, _tls_data in processed_data.items():
+        # 每个仿真步都更新所有 TLS。若某个 TLS 当前没有 detector 数据，
+        # 仍传入空 dict，让 TrafficLightInfo 清空上一时刻残留的 movement 特征。
+        for _tls_id in self.tls_ids:
+            _tls_data = processed_data.get(_tls_id, {})
             self.traffic_lights[_tls_id].update_features(_tls_data)
 
     def get_objects_infos(self):
