@@ -5,7 +5,7 @@
 1. INFO 级别的日志打印在控制台;
 2. 仿真相关的日志存储在 SIM 开头的文件
 3. 算法相关的日志存储在 Traing 开头的文件
-LastEditTime: 2026-04-28 23:59:45
+LastEditTime: 2026-05-04 17:47:27
 '''
 import os
 import sys
@@ -161,6 +161,7 @@ def golden_filter(record) -> bool:
         or '[ROLLOUT-WORKER]' in msg
         or '[Bulletin]' in msg
         or '[DIAG]' in msg
+        or '[ROLLOUT-STATE]' in msg
     ):
         return True
     return False

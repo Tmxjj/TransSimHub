@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2023-08-25 11:22:43
 @Description: 定义每一个 traffic light 的信息
-LastEditTime: 2026-05-01 16:53:55
+LastEditTime: 2026-05-07 17:44:34
 '''
 from __future__ import annotations
 

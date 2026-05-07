@@ -265,7 +265,10 @@ class BaseTLS(ABC):
         phase_id = 0
         for phase in logic.phases: # 每个 phase 的组成, 例如 rrrrrrGGGGrrrrrGGGr
             _movement_list = list() # 每个 phase 由哪些 movement 组成
-            if 'G' in phase.state: # 判断是否是绿灯相位
+            # 与 build_phases 保持一致：含 G 且不含 y 才算纯绿灯相位。
+            # 部分路网（如 Songdo）的黄灯过渡相位同时含有 G（自由通行车道保持放行），
+            # 不加 'y' not in state 过滤会把这些黄灯相位也误识别为独立绿灯相位。
+            if 'G' in phase.state and 'y' not in phase.state: # 判断是否是绿灯相位
                 for _conn_info, _phase_color in zip(self.tls_connections, phase.state):
                     if _phase_color == 'G':
                         fromEdge = _conn_info[0] # 获得 fronEdge
