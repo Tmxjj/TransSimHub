@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2024-07-08 22:21:18
 @Description: 3D 场景内的车辆
-LastEditTime: 2026-04-24 21:39:07
+LastEditTime: 2026-05-09 16:27:20
 '''
 import random
 import hashlib
@@ -115,9 +115,9 @@ class Vehicle3DElement(BaseElement):
         if self.veh_type in MODEL_MAPPING:
             self.veh_model_name = MODEL_MAPPING[self.veh_type]
         else:
-            # 处理普通背景车辆
+            # 处理普通背景车辆 b为橙色，和school bus易混淆，降低概率
             VEHICLE_MODELS = ['a', 'b', 'c', 'd', 'e', 'f'] # 蓝色、橙色、灰色、
-            MODEL_WEIGHTS = [6/30, 6/30, 6/30,  2/30, 6/30,4/30]
+            MODEL_WEIGHTS = [7/30, 1/30, 7/30,  3/30, 7/30,5/30]
 
             # 使用固定种子生成一个可复现的随机选择，将车辆 id 编码进种子确保车辆类型在整个仿真周期保持一致
             # 注意：Python 内置 hash() 受 PYTHONHASHSEED 影响，跨进程结果不同，不能用于固定种子
