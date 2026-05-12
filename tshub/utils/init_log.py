@@ -12,6 +12,22 @@ import sys
 from loguru import logger
 from datetime import datetime
 
+EVAL_TAG = "[EVAL]"
+CFG_TAG = "[CFG]"
+VLM_TAG = "[VLM]"
+MAX_PRESSURE_TAG = "[MaxPressure]"
+FIXED_TIME_TAG = "[FixedTime]"
+RANDOM_TAG = "[Random]"
+GOLDEN_TAGS = (
+    "[GOLDEN]",
+    "[Golden]",
+    "[ROLLOUT]",
+    "[ROLLOUT-WORKER]",
+    "[Bulletin]",
+    "[DIAG]",
+    "[ROLLOUT-STATE]",
+)
+
 
 def _build_log_file_map(log_path: str, session_tag: str) -> dict:
     """根据固定的 session_tag 构造本次运行使用的日志文件路径。
@@ -131,15 +147,14 @@ def training_filter(record) -> bool:
 def evaluation_filter(record) -> bool:
     """单独过滤出评估过程中的常规日志 (排除 SIM 和 RL)
     """
-    # 包含 [EVAL] 或者 [CFG] 的日志都归类到 Evaluator 日志
-    if '[EVAL]' in record['message']:
+    if EVAL_TAG in record['message']:
         return True
     return False
 
 def config_filter(record) -> bool:
     """单独过滤出配置相关的日志
     """
-    if '[CFG]' in record['message']:
+    if CFG_TAG in record['message']:
         return True
     return False
 
@@ -154,23 +169,20 @@ def golden_filter(record) -> bool:
       - 历史上的 `[DIAG]` 日志已经废弃，若还有残留，也并回 Golden 日志，避免额外生成 DIAG 文件。
     """
     msg = record['message']
-    if (
-        '[GOLDEN]' in msg
-        or '[Golden]' in msg
-        or '[ROLLOUT]' in msg
-        or '[ROLLOUT-WORKER]' in msg
-        or '[Bulletin]' in msg
-        or '[DIAG]' in msg
-        or '[ROLLOUT-STATE]' in msg
-    ):
+    if any(tag in msg for tag in GOLDEN_TAGS):
         return True
     return False
 
 def vlm_filter(record) -> bool:
-    """单独过滤出 VLM 推理决策相关的日志（[VLM]、[MaxPressure]、[FixedTime]）
-    """
+    """单独过滤出评估决策相关的日志（VLM / baseline modes / event bulletin 注入）。"""
     msg = record['message']
-    if '[VLM]' in msg or '[MaxPressure]' in msg or '[FixedTime]' in msg:
+    if (
+        VLM_TAG in msg
+        or MAX_PRESSURE_TAG in msg
+        or FIXED_TIME_TAG in msg
+        or RANDOM_TAG in msg
+        or "[Bulletin]" in msg  # EventBulletin 广播注入日志（run_eval.py [Bulletin][注入]）
+    ):
         return True
     return False
 
