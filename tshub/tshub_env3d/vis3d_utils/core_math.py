@@ -676,3 +676,23 @@ def calculate_center_point(points):
     center_x = sum(x_coords) / len(points)
     center_y = sum(y_coords) / len(points)
     return center_x, center_y
+
+
+def calculate_inner_edge_point(points, heading_deg: float):
+    """返回停止线中靠近道路中央分隔线一侧的端点（进口道视角最左侧车道末端）。
+
+    原理：右行交通下，进口道的中央分隔线位于行驶方向的左侧。
+    将各车道停止线端点投影到行驶方向左侧垂线上，投影最大者即为内侧端点。
+
+    Args:
+        points: 停止线各车道端点坐标列表，格式 [(x1, y1), (x2, y2), ...]
+        heading_deg: 进口道行驶方向的 SUMO heading（°，北=0 顺时针）
+
+    Returns:
+        (x, y): 最靠近中央分隔线的端点坐标
+    """
+    theta = math.radians(heading_deg)
+    # 行驶方向向量为 (sin θ, cos θ)；左侧垂线方向为 (−cos θ, sin θ)
+    lp_x = -math.cos(theta)
+    lp_y = math.sin(theta)
+    return max(points, key=lambda p: p[0] * lp_x + p[1] * lp_y)

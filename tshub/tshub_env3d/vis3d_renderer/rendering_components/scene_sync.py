@@ -2,7 +2,7 @@
 @Author: WANG Maonan
 @Date: 2024-07-13 20:53:01
 @Description: 场景的同步, 根据 SUMO 的信息更新 panda3d
-LastEditTime: 2026-04-22 11:31:15
+LastEditTime: 2026-05-22 21:37:19
 '''
 import math
 from loguru import logger
@@ -13,7 +13,7 @@ from panda3d.core import Material, Vec4
 from ..traffic_elements.vehicle import Vehicle3DElement
 from ..traffic_elements.traffic_signals import TLS3DElement
 from ..traffic_elements.aircraft import Aircraft3DElement
-from ...vis3d_utils.core_math import calculate_center_point, vec_to_radians, vec_2d
+from ...vis3d_utils.core_math import calculate_center_point, calculate_inner_edge_point, vec_to_radians, vec_2d
 
 # 事件占位车辆的 vType ID 集合（精确匹配）及前缀（兼容带长度后缀的变体，如 barrier_A_5.00）
 # 这些车辆的 3D 渲染完全由 EmergencyManager3D 负责，scene_sync 不应为其创建 Vehicle3DElement，
@@ -171,8 +171,15 @@ class SceneSync(object):
         """初始化某一个路口的进口道摄像头（停止线处）。
         element_id 格式：{tls_id}_{direction_short}，例如 J1_N / J1_E / J1_S / J1_W。
         """
-        sensor_types = self.sensor_config['tls'][tls_id].get('sensor_types', [])
-        tls_camera_height = self.sensor_config['tls'][tls_id].get('tls_camera_height', 10)
+        tls_cfg = self.sensor_config['tls'][tls_id]
+        sensor_types     = tls_cfg.get('sensor_types', [])
+        tls_camera_height = tls_cfg.get('tls_camera_height', 10)
+        # 俯仰角（°）：None → OffscreenJunctionFrontCamera 使用原始 height//3 lookAt 模式
+        camera_pitch_deg = tls_cfg.get('camera_pitch_deg', None)
+        # 纵向后退距离（米）：0 = 位于停止线正上方，建议 5–15m 以扩大近端视野
+        camera_setback   = tls_cfg.get('camera_setback', 0)
+        # 横向偏移（米）：正值 = 向中间分隔带（内侧），负值 = 向路肩（外侧），0 = 不偏移
+        camera_lateral   = tls_cfg.get('camera_lateral', 0)
         # 按 heading 从小到大排序（SUMO 北=0 顺时针），保证顺序稳定
         sorted_road_ids = sorted(tls_info['in_roads_heading'], key=tls_info['in_roads_heading'].get)
 
@@ -191,7 +198,10 @@ class SceneSync(object):
                 element_heading=heading,
                 root_np=self.root_np,
                 showbase_instance=self.showbase_instance,
-                tls_camera_height=tls_camera_height
+                tls_camera_height=tls_camera_height,
+                camera_pitch_deg=camera_pitch_deg,
+                camera_setback=camera_setback,
+                camera_lateral=camera_lateral,
             )
             element.attach_sensors_to_element(sensor_types)
             self._tls_elements[tls_element_id] = element
@@ -207,9 +217,15 @@ class SceneSync(object):
         位置来源：tls_info['in_road_upstream_point'][road_id] 中各 lane 设定的坐标均值。
         若该字段不存在（旧版 TrafficLightInfo），则跳过并给出警告。
         """
-        upstream_cfg = self.sensor_config['upstream'].get(tls_id, {})
-        sensor_types = upstream_cfg.get('sensor_types', ['junction_front_all'])
+        upstream_cfg  = self.sensor_config['upstream'].get(tls_id, {})
+        sensor_types  = upstream_cfg.get('sensor_types', ['junction_front_all'])
         camera_height = upstream_cfg.get('tls_camera_height', 15)
+        # 俯仰角（°）：None → 原始模式；上游摄像头需要较浅角度以覆盖远端路段，建议 20°–35°
+        camera_pitch_deg = upstream_cfg.get('camera_pitch_deg', None)
+        # 纵向后退偏移（米）：上游摄像头通常 = 0（位于上游端点正上方，已有 300m 视距）
+        camera_setback   = upstream_cfg.get('camera_setback', 0)
+        # 横向偏移（米）：正值 = 向中间分隔带（内侧），负值 = 向路肩（外侧），0 = 不偏移
+        camera_lateral   = upstream_cfg.get('camera_lateral', 0)
 
         upstream_points = tls_info.get('in_road_upstream_point')
         if not upstream_points:
@@ -230,7 +246,8 @@ class SceneSync(object):
             dir_idx = _heading_to_direction_index(tls_id,heading)
             dir_short = _DIRECTION_SHORT[dir_idx]
             element_id = f'upstream_{tls_id}_{dir_short}'
-            position = calculate_center_point(upstream_points[road_id])
+            position = calculate_inner_edge_point(upstream_points[road_id],heading)
+            # position = calculate_center_point(upstream_points[road_id])
 
             # 上游摄像头朝向与进口道行驶方向相反（拍摄这个道路下游方向）
             camera_heading = (heading + 180) % 360
@@ -243,7 +260,10 @@ class SceneSync(object):
                 element_heading=camera_heading,
                 root_np=self.root_np,
                 showbase_instance=self.showbase_instance,
-                tls_camera_height=camera_height
+                tls_camera_height=camera_height,
+                camera_pitch_deg=camera_pitch_deg,
+                camera_setback=camera_setback,
+                camera_lateral=camera_lateral,
             )
             element.attach_sensors_to_element(sensor_types)
             self._upstream_elements[element_id] = element
